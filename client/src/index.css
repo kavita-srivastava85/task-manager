@@ -837,21 +837,37 @@ textarea { resize: vertical; }
   margin-top: 0;
 }
 .nested-reply-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   height: 2rem;
-  padding: 0;
+  padding: 0 0.7rem;
   border-radius: 999px;
   background: #fff;
   color: #0284c7;
   border: 1px solid #7dd3fc;
   box-shadow: none;
+  font-size: 0.82rem;
+  font-weight: 750;
 }
 .nested-reply-icon:hover {
   filter: none;
   transform: none;
   background: #e0f2fe;
+}
+.nested-pill {
+  display: inline-flex;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+.nested-hint {
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 .nested-reply-btn {
   display: inline-flex;

@@ -70,7 +70,9 @@ export default function MentionTextarea({
   }
 
   function onKeyDown(e) {
-    if (open && suggestions.length > 0) {
+    const mentionMenuOpen = open && suggestions.length > 0;
+
+    if (mentionMenuOpen) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setActive((i) => (i + 1) % suggestions.length);
@@ -92,15 +94,16 @@ export default function MentionTextarea({
       }
     }
 
-    // Enter sends (Shift+Enter = new line) when requested
+    // Enter sends nested/quick replies; Shift+Enter inserts a newline
     if (
-      onEnterSubmit &&
+      typeof onEnterSubmit === 'function' &&
       e.key === 'Enter' &&
       !e.shiftKey &&
       !e.nativeEvent.isComposing
     ) {
       e.preventDefault();
-      onEnterSubmit();
+      const latest = ref.current?.value ?? value;
+      onEnterSubmit(latest);
     }
   }
 

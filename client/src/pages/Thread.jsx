@@ -54,12 +54,11 @@ function ReplyNode({
 }) {
   const [showNested, setShowNested] = useState(false);
   const [nestedBody, setNestedBody] = useState('');
-  const [nestedFiles, setNestedFiles] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  async function sendNested() {
-    const text = nestedBody.trim();
+  async function sendNested(rawText) {
+    const text = String(rawText ?? nestedBody).trim();
     if (!text || busy) return;
     setError('');
     setBusy(true);
@@ -67,29 +66,26 @@ function ReplyNode({
       await onNestedReply({
         parentReplyId: reply.id,
         body: text,
-        files: nestedFiles,
       });
       setNestedBody('');
-      setNestedFiles(null);
       setShowNested(false);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Could not send reply');
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitNested(e) {
-    e.preventDefault();
-    await sendNested();
-  }
-
   return (
     <li className={`reply-node${reply.isAccepted ? ' accepted-reply' : ''}`}>
-      <div className="reply-card" style={{ marginLeft: depth ? `${Math.min(depth, 5) * 1.1}rem` : 0 }}>
+      <div
+        className="reply-card"
+        style={{ marginLeft: depth ? `${Math.min(depth, 5) * 1.15}rem` : 0 }}
+      >
         <div className="reply-top">
           <p className="meta">
             {reply.author.displayName} · {formatWhen(reply.createdAt)}
+            {depth > 0 && <span className="nested-pill">Nested</span>}
             {reply.isAccepted && (
               <span className="accepted-badge">
                 <IconCheck /> Accepted solution
@@ -117,37 +113,46 @@ function ReplyNode({
             <button
               type="button"
               className="nested-reply-icon"
-              aria-label="Reply"
-              title="Reply"
-              onClick={() => setShowNested((v) => !v)}
+              aria-label="Nested reply"
+              title="Nested reply"
+              onClick={() => {
+                setShowNested((v) => !v);
+                setError('');
+              }}
             >
               <IconReply size={16} />
+              <span>Reply</span>
             </button>
           )}
         </div>
 
         {showNested && !isClosed && (
-          <form onSubmit={submitNested} className="nested-composer">
+          <div className="nested-composer">
             <MentionTextarea
               value={nestedBody}
               onChange={setNestedBody}
               users={users}
-              required
               rows={2}
               autoFocus
-              placeholder={`Reply to ${reply.author.displayName}…`}
-              onEnterSubmit={sendNested}
+              placeholder={`Write a nested reply to ${reply.author.displayName}…`}
+              onEnterSubmit={(text) => {
+                void sendNested(text);
+              }}
             />
             {error && <p className="error">{error}</p>}
             <div className="nested-actions">
               <button
-                type="submit"
+                type="button"
                 className="nested-send-btn btn-with-icon"
                 disabled={busy || !nestedBody.trim()}
+                onClick={() => {
+                  void sendNested(nestedBody);
+                }}
               >
                 <IconSend size={16} />
                 {busy ? 'Sending…' : 'Send'}
               </button>
+              <span className="muted nested-hint">Press Enter to send</span>
               <button
                 type="button"
                 className="linkish"
@@ -160,7 +165,7 @@ function ReplyNode({
                 Cancel
               </button>
             </div>
-          </form>
+          </div>
         )}
       </div>
 
@@ -232,12 +237,15 @@ export default function Thread() {
   async function submitReply({ parentReplyId = null, body: text, files: fileList }) {
     const fd = new FormData();
     fd.append('body', text);
-    if (parentReplyId != null) fd.append('parentReplyId', String(parentReplyId));
+    if (parentReplyId != null && parentReplyId !== '') {
+      fd.append('parentReplyId', String(parentReplyId));
+    }
     if (fileList) {
       for (const f of fileList) fd.append('files', f);
     }
-    await api.createReply(id, fd);
+    const created = await api.createReply(id, fd);
     await load();
+    return created;
   }
 
   async function onReply(e) {
