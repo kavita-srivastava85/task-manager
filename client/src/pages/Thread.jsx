@@ -58,25 +58,30 @@ function ReplyNode({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  async function submitNested(e) {
-    e.preventDefault();
+  async function sendNested() {
+    const text = nestedBody.trim();
+    if (!text || busy) return;
     setError('');
     setBusy(true);
     try {
       await onNestedReply({
         parentReplyId: reply.id,
-        body: nestedBody.trim(),
+        body: text,
         files: nestedFiles,
       });
       setNestedBody('');
       setNestedFiles(null);
       setShowNested(false);
-      e.target.reset?.();
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitNested(e) {
+    e.preventDefault();
+    await sendNested();
   }
 
   return (
@@ -101,21 +106,25 @@ function ReplyNode({
                 <IconCheck /> Accept
               </button>
             )}
-            {!isClosed && (
-              <button
-                type="button"
-                className="nested-reply-btn"
-                onClick={() => setShowNested((v) => !v)}
-              >
-                <IconReply size={14} /> Reply
-              </button>
-            )}
           </div>
         </div>
         <MentionBody text={reply.body} mentions={reply.mentions} />
         <AttachmentList attachments={reply.attachments} />
         <MentionChips mentions={reply.mentions} />
-        <ReactionBar replyId={reply.id} initial={reply.reactions} />
+        <div className="reply-message-actions">
+          <ReactionBar replyId={reply.id} initial={reply.reactions} />
+          {!isClosed && (
+            <button
+              type="button"
+              className="nested-reply-icon"
+              aria-label="Reply"
+              title="Reply"
+              onClick={() => setShowNested((v) => !v)}
+            >
+              <IconReply size={16} />
+            </button>
+          )}
+        </div>
 
         {showNested && !isClosed && (
           <form onSubmit={submitNested} className="nested-composer">
@@ -124,19 +133,11 @@ function ReplyNode({
               onChange={setNestedBody}
               users={users}
               required
-              rows={3}
+              rows={2}
+              autoFocus
               placeholder={`Reply to ${reply.author.displayName}…`}
+              onEnterSubmit={sendNested}
             />
-            <label className="file-label">
-              <span className="file-label-text">
-                <IconPaperclip /> Attachments
-              </span>
-              <input
-                type="file"
-                multiple
-                onChange={(e) => setNestedFiles(e.target.files)}
-              />
-            </label>
             {error && <p className="error">{error}</p>}
             <div className="nested-actions">
               <button
@@ -145,12 +146,16 @@ function ReplyNode({
                 disabled={busy || !nestedBody.trim()}
               >
                 <IconSend size={16} />
-                {busy ? 'Sending…' : 'Send reply'}
+                {busy ? 'Sending…' : 'Send'}
               </button>
               <button
                 type="button"
                 className="linkish"
-                onClick={() => setShowNested(false)}
+                onClick={() => {
+                  setShowNested(false);
+                  setNestedBody('');
+                  setError('');
+                }}
               >
                 Cancel
               </button>

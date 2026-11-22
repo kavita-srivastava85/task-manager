@@ -17,6 +17,8 @@ export default function MentionTextarea({
   rows = 4,
   required = false,
   placeholder,
+  autoFocus = false,
+  onEnterSubmit,
 }) {
   const ref = useRef(null);
   const [open, setOpen] = useState(false);
@@ -68,19 +70,37 @@ export default function MentionTextarea({
   }
 
   function onKeyDown(e) {
-    if (!open || suggestions.length === 0) return;
+    if (open && suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActive((i) => (i + 1) % suggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActive((i) => (i - 1 + suggestions.length) % suggestions.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        insertUser(suggestions[active]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setOpen(false);
+        return;
+      }
+    }
 
-    if (e.key === 'ArrowDown') {
+    // Enter sends (Shift+Enter = new line) when requested
+    if (
+      onEnterSubmit &&
+      e.key === 'Enter' &&
+      !e.shiftKey &&
+      !e.nativeEvent.isComposing
+    ) {
       e.preventDefault();
-      setActive((i) => (i + 1) % suggestions.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActive((i) => (i - 1 + suggestions.length) % suggestions.length);
-    } else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      insertUser(suggestions[active]);
-    } else if (e.key === 'Escape') {
-      setOpen(false);
+      onEnterSubmit();
     }
   }
 
@@ -92,6 +112,7 @@ export default function MentionTextarea({
         rows={rows}
         required={required}
         placeholder={placeholder}
+        autoFocus={autoFocus}
         onChange={updateFromEvent}
         onKeyDown={onKeyDown}
         onClick={updateFromEvent}

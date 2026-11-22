@@ -826,6 +826,33 @@ textarea { resize: vertical; }
   gap: 0.4rem;
   align-items: center;
 }
+.reply-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-top: 0.15rem;
+}
+.reply-message-actions .reaction-bar {
+  margin-top: 0;
+}
+.nested-reply-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #0284c7;
+  border: 1px solid #7dd3fc;
+  box-shadow: none;
+}
+.nested-reply-icon:hover {
+  filter: none;
+  transform: none;
+  background: #e0f2fe;
+}
 .nested-reply-btn {
   display: inline-flex;
   align-items: center;
