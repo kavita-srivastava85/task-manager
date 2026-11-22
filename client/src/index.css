@@ -111,29 +111,47 @@ textarea { resize: vertical; }
 .error { color: var(--danger); margin: 0; }
 .ok { color: var(--ok); margin: 0; }
 
+.password-field {
+  align-items: stretch;
+}
 .password-field .password-wrap,
 .email-suggest-wrap {
   position: relative;
   display: block;
+  width: 100%;
 }
-.password-wrap input { padding-right: 2.8rem; }
+.password-wrap input {
+  display: block;
+  width: 100%;
+  padding-right: 3rem;
+}
 .eye-btn {
   position: absolute;
-  right: 0.35rem;
+  right: 0.45rem;
   top: 50%;
-  transform: translateY(-50%);
-  width: 2.2rem;
-  height: 2.2rem;
-  display: grid;
+  transform: translateY(-50%) !important;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 !important;
+  margin: 0;
+  display: inline-grid;
   place-items: center;
   border-radius: 8px;
+  background: transparent;
   color: var(--muted);
+  box-shadow: none;
+  line-height: 0;
+  z-index: 2;
 }
 .eye-btn:hover {
   color: var(--accent-deep);
-  background: rgba(13, 148, 136, 0.1);
-  transform: translateY(-50%);
+  background: rgba(13, 148, 136, 0.12);
+  transform: translateY(-50%) !important;
   filter: none;
+}
+.eye-btn svg {
+  display: block;
+  pointer-events: none;
 }
 
 .email-suggest-list {
@@ -734,9 +752,6 @@ textarea { resize: vertical; }
 }
 .thread-head h1 { color: #0f4c56; }
 
-.thread-page {
-  padding-bottom: 1rem;
-}
 .thread-heading {
   display: grid;
   gap: 0.35rem;
@@ -830,21 +845,39 @@ textarea { resize: vertical; }
 }
 .nested-composer {
   margin-top: 0.75rem;
-  padding: 0.75rem;
+  padding: 0.85rem;
   border-radius: 12px;
-  background: rgba(224, 242, 254, 0.55);
-  border: 1px solid #bae6fd;
+  background: rgba(224, 242, 254, 0.7);
+  border: 1px solid #7dd3fc;
+  display: grid;
+  gap: 0.75rem;
 }
 .nested-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
   align-items: center;
+  margin-top: 0.15rem;
+}
+.nested-send-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: linear-gradient(135deg, #0d9488, #0284c7);
+  color: #fff;
+  border: 0;
+  padding: 0.55rem 1rem;
+  font-weight: 700;
+}
+.thread-page {
+  display: grid;
+  gap: 1.25rem;
+  padding-bottom: 2rem;
 }
 .thread-reply-bottom {
-  position: sticky;
-  bottom: 0.75rem;
-  z-index: 3;
+  position: static;
+  z-index: auto;
+  margin-top: 0.25rem;
 }
 
 .meta, .mention-meta {

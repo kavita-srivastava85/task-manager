@@ -47,11 +47,9 @@ function ReplyNode({
   reply,
   depth,
   canAccept,
-  isAuthor,
   isClosed,
   users,
   onAccept,
-  onCloseChat,
   onNestedReply,
 }) {
   const [showNested, setShowNested] = useState(false);
@@ -103,11 +101,6 @@ function ReplyNode({
                 <IconCheck /> Accept
               </button>
             )}
-            {isAuthor && reply.isAccepted && !isClosed && (
-              <button type="button" className="close-chat-btn" onClick={onCloseChat}>
-                Close discussion
-              </button>
-            )}
             {!isClosed && (
               <button
                 type="button"
@@ -125,7 +118,7 @@ function ReplyNode({
         <ReactionBar replyId={reply.id} initial={reply.reactions} />
 
         {showNested && !isClosed && (
-          <form onSubmit={submitNested} className="stack nested-composer">
+          <form onSubmit={submitNested} className="nested-composer">
             <MentionTextarea
               value={nestedBody}
               onChange={setNestedBody}
@@ -146,9 +139,13 @@ function ReplyNode({
             </label>
             {error && <p className="error">{error}</p>}
             <div className="nested-actions">
-              <button type="submit" className="btn-with-icon" disabled={busy}>
+              <button
+                type="submit"
+                className="nested-send-btn btn-with-icon"
+                disabled={busy || !nestedBody.trim()}
+              >
                 <IconSend size={16} />
-                {busy ? 'Sending…' : 'Send'}
+                {busy ? 'Sending…' : 'Send reply'}
               </button>
               <button
                 type="button"
@@ -170,11 +167,9 @@ function ReplyNode({
               reply={child}
               depth={depth + 1}
               canAccept={canAccept}
-              isAuthor={isAuthor}
               isClosed={isClosed}
               users={users}
               onAccept={onAccept}
-              onCloseChat={onCloseChat}
               onNestedReply={onNestedReply}
             />
           ))}
@@ -295,15 +290,6 @@ export default function Thread() {
         {isClosed && <span className="closed-pill">Closed</span>}
       </div>
 
-      {isAuthor && !isClosed && (
-        <div className="close-chat-banner">
-          <span>Found the solution?</span>
-          <button type="button" className="close-chat-btn" onClick={closeChat}>
-            Close this discussion
-          </button>
-        </div>
-      )}
-
       <article className="thread-head">
         {heading.truncated && !headingOpen ? (
           <button
@@ -354,11 +340,9 @@ export default function Thread() {
               reply={r}
               depth={0}
               canAccept={canAccept}
-              isAuthor={isAuthor}
               isClosed={isClosed}
               users={users}
               onAccept={acceptSolution}
-              onCloseChat={closeChat}
               onNestedReply={submitReply}
             />
           ))}
