@@ -45,7 +45,7 @@ export default function AdminHome() {
           <span className="brand-icon">
             <IconChat size={18} />
           </span>
-          Task Manager
+          Discussions App
         </p>
         <p className="back-row">
           <Link to="/">← Back</Link>

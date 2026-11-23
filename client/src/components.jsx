@@ -100,7 +100,7 @@ export function Shell({ user, onLogout, children }) {
           <span className="brand-icon">
             <IconChat size={18} />
           </span>
-          Task Manager
+          Discussions App
         </Link>
         <nav>
           <Link to="/discussions" className="nav-link">

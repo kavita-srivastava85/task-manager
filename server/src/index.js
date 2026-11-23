@@ -217,7 +217,7 @@ function mapPost(row, viewerId = null) {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'task-manager' });
+  res.json({ ok: true, service: 'discussions-app' });
 });
 
 app.get('/api/auth/status', (_req, res) => {
@@ -946,5 +946,5 @@ if (fs.existsSync(CLIENT_DIST)) {
 }
 
 app.listen(PORT, () => {
-  console.log(`Task Manager API listening on http://localhost:${PORT}`);
+  console.log(`Discussions App API listening on http://localhost:${PORT}`);
 });

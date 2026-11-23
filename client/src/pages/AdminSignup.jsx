@@ -84,7 +84,7 @@ export default function AdminSignup() {
           <span className="brand-icon">
             <IconChat size={18} />
           </span>
-          Task Manager
+          Discussions App
         </p>
         <p className="back-row">
           <Link to="/admin">← Back</Link>

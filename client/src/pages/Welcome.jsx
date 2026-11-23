@@ -45,7 +45,7 @@ export default function Welcome() {
           <span className="brand-icon">
             <IconChat size={20} />
           </span>
-          Task Manager
+          Discussions App
         </p>
         <div className="portal-actions">
           <Link

@@ -1,4 +1,4 @@
-# Task Manager
+# Discussions App
 
 Web app for admin-provisioned employee discussions (works on laptop and mobile browsers).
 

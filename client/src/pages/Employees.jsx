@@ -77,7 +77,7 @@ export default function Employees() {
 
   async function copyCredentials() {
     if (!createdCred) return;
-    const text = `Task Manager login\nEmail: ${createdCred.email}\nPassword: ${createdCred.password}`;
+    const text = `Discussions App login\nEmail: ${createdCred.email}\nPassword: ${createdCred.password}`;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);

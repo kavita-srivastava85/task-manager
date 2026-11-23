@@ -66,7 +66,7 @@ export default function ResetPassword() {
           <span className="brand-icon">
             <IconChat size={18} />
           </span>
-          Task Manager
+          Discussions App
         </p>
         <p className="back-row">
           <Link to={`/forgot-password?mode=${mode}`}>← Back</Link>
