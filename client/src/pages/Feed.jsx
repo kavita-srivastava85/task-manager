@@ -29,6 +29,7 @@ export default function Feed() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showComposer, setShowComposer] = useState(false);
+  const [mobileTab, setMobileTab] = useState('recent');
 
   async function load() {
     const [{ posts: next }, { users: directory }] = await Promise.all([
@@ -64,7 +65,7 @@ export default function Feed() {
     [posts],
   );
   const myChats = useMemo(
-    () => posts.filter((p) => p.author.id === user?.id),
+    () => posts.filter((p) => Number(p.author.id) === Number(user?.id)),
     [posts, user?.id],
   );
   const recentAll = useMemo(() => posts.slice(0, 4), [posts]);
@@ -95,7 +96,39 @@ export default function Feed() {
 
   return (
     <div className="chat-layout three-col">
-      <aside className="chat-side">
+      <div className="mobile-feed-tabs" role="tablist" aria-label="Discussions">
+        <button
+          type="button"
+          role="tab"
+          className={mobileTab === 'all' ? 'active' : ''}
+          aria-selected={mobileTab === 'all'}
+          onClick={() => setMobileTab('all')}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={mobileTab === 'recent' ? 'active' : ''}
+          aria-selected={mobileTab === 'recent'}
+          onClick={() => setMobileTab('recent')}
+        >
+          Recent
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={mobileTab === 'mine' ? 'active' : ''}
+          aria-selected={mobileTab === 'mine'}
+          onClick={() => setMobileTab('mine')}
+        >
+          Mine
+        </button>
+      </div>
+
+      <aside
+        className={`chat-side mobile-panel${mobileTab === 'all' ? ' mobile-show' : ''}`}
+      >
         <h2 className="side-heading">
           <IconChat size={16} /> Open
         </h2>
@@ -120,7 +153,9 @@ export default function Feed() {
         </ul>
       </aside>
 
-      <section className="chat-center">
+      <section
+        className={`chat-center mobile-panel${mobileTab === 'recent' ? ' mobile-show' : ''}`}
+      >
         <button
           type="button"
           className="new-chat-plus"
@@ -188,7 +223,9 @@ export default function Feed() {
         </ul>
       </section>
 
-      <aside className="chat-side chat-side-right">
+      <aside
+        className={`chat-side chat-side-right mobile-panel${mobileTab === 'mine' ? ' mobile-show' : ''}`}
+      >
         <h2 className="side-heading">
           <IconChat size={16} /> My discussions
         </h2>
