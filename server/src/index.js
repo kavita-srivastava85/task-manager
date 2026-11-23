@@ -18,7 +18,7 @@ import {
 import { parseMentions } from './mentions.js';
 import {
   createNotification,
-  notifyMentions,
+  notifyEveryone,
   mapNotification,
 } from './notifications.js';
 
@@ -548,10 +548,9 @@ app.post('/api/posts', authRequired, upload.array('files', 5), (req, res) => {
       .prepare(`INSERT INTO posts (author_id, title, body) VALUES (?, ?, ?)`)
       .run(req.user.id, title, body);
     const postId = result.lastInsertRowid;
-    const mentioned = saveMentions({ postId, body });
+    saveMentions({ postId, body });
     saveAttachments({ postId, files: req.files || [] });
-    notifyMentions({
-      mentionedUsers: mentioned,
+    notifyEveryone({
       postId,
       actorId: req.user.id,
     });
@@ -630,6 +629,125 @@ app.post('/api/posts/:id/close', authRequired, (req, res) => {
     )
     .get(id);
   res.json({ post: mapPost(row, req.user.id) });
+});
+
+function canModifyContent(reqUser, authorId) {
+  return (
+    Number(reqUser.id) === Number(authorId) || reqUser.role === 'admin'
+  );
+}
+
+app.patch('/api/posts/:id', authRequired, (req, res) => {
+  const id = Number(req.params.id);
+  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!canModifyContent(req.user, post.author_id)) {
+    return res.status(403).json({ error: 'Not allowed to edit this message' });
+  }
+  if ((post.status || 'open') === 'closed') {
+    return res.status(400).json({ error: 'This discussion is closed' });
+  }
+  const body = String(req.body?.body || '').trim();
+  if (!body) return res.status(400).json({ error: 'Message required' });
+  const title = titleFromBody(body);
+
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE posts SET body = ?, title = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(body, title, id);
+    db.prepare(`DELETE FROM mentions WHERE post_id = ?`).run(id);
+    saveMentions({ postId: id, body });
+  })();
+
+  const row = db
+    .prepare(
+      `SELECT p.*,
+              u.email AS author_email,
+              u.display_name AS author_display_name,
+              u.role AS author_role,
+              (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
+       FROM posts p JOIN users u ON u.id = p.author_id
+       WHERE p.id = ?`,
+    )
+    .get(id);
+  res.json({ post: mapPost(row, req.user.id) });
+});
+
+app.delete('/api/posts/:id', authRequired, (req, res) => {
+  const id = Number(req.params.id);
+  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!canModifyContent(req.user, post.author_id)) {
+    return res.status(403).json({ error: 'Not allowed to delete this message' });
+  }
+  db.prepare(`DELETE FROM posts WHERE id = ?`).run(id);
+  res.json({ ok: true });
+});
+
+app.patch('/api/posts/:postId/replies/:replyId', authRequired, (req, res) => {
+  const postId = Number(req.params.postId);
+  const replyId = Number(req.params.replyId);
+  const post = db.prepare('SELECT id, status FROM posts WHERE id = ?').get(postId);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if ((post.status || 'open') === 'closed') {
+    return res.status(400).json({ error: 'This discussion is closed' });
+  }
+  const reply = db.prepare('SELECT * FROM replies WHERE id = ?').get(replyId);
+  if (!reply || Number(reply.post_id) !== postId) {
+    return res.status(404).json({ error: 'Reply not found' });
+  }
+  if (!canModifyContent(req.user, reply.author_id)) {
+    return res.status(403).json({ error: 'Not allowed to edit this message' });
+  }
+  const body = String(req.body?.body || '').trim();
+  if (!body) return res.status(400).json({ error: 'Message required' });
+
+  db.transaction(() => {
+    db.prepare(`UPDATE replies SET body = ? WHERE id = ?`).run(body, replyId);
+    db.prepare(`DELETE FROM mentions WHERE reply_id = ?`).run(replyId);
+    saveMentions({ replyId, body });
+    db.prepare(
+      `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
+    ).run(postId);
+  })();
+
+  const r = db
+    .prepare(
+      `SELECT r.*,
+              u.email AS author_email,
+              u.display_name AS author_display_name,
+              u.role AS author_role
+       FROM replies r
+       JOIN users u ON u.id = r.author_id
+       WHERE r.id = ?`,
+    )
+    .get(replyId);
+  const accepted = db
+    .prepare('SELECT accepted_reply_id FROM posts WHERE id = ?')
+    .get(postId)?.accepted_reply_id;
+  res.json({ reply: mapReply(r, accepted, req.user.id) });
+});
+
+app.delete('/api/posts/:postId/replies/:replyId', authRequired, (req, res) => {
+  const postId = Number(req.params.postId);
+  const replyId = Number(req.params.replyId);
+  const reply = db.prepare('SELECT * FROM replies WHERE id = ?').get(replyId);
+  if (!reply || Number(reply.post_id) !== postId) {
+    return res.status(404).json({ error: 'Reply not found' });
+  }
+  if (!canModifyContent(req.user, reply.author_id)) {
+    return res.status(403).json({ error: 'Not allowed to delete this message' });
+  }
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE posts SET accepted_reply_id = NULL WHERE id = ? AND accepted_reply_id = ?`,
+    ).run(postId, replyId);
+    db.prepare(`DELETE FROM replies WHERE id = ?`).run(replyId);
+    db.prepare(
+      `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
+    ).run(postId);
+  })();
+  res.json({ ok: true });
 });
 
 app.post('/api/reactions', authRequired, (req, res) => {
@@ -725,10 +843,9 @@ app.post(
       db.prepare(
         `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
       ).run(postId);
-      const mentioned = saveMentions({ replyId, body });
+      saveMentions({ replyId, body });
       saveAttachments({ replyId, files: req.files || [] });
-      notifyMentions({
-        mentionedUsers: mentioned,
+      notifyEveryone({
         postId,
         replyId,
         actorId: req.user.id,

@@ -86,6 +86,22 @@ export const api = {
     }),
   closePost: (postId) =>
     request(`/api/posts/${postId}/close`, { method: 'POST' }),
+  updatePost: (postId, body) =>
+    request(`/api/posts/${postId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body }),
+    }),
+  deletePost: (postId) =>
+    request(`/api/posts/${postId}`, { method: 'DELETE' }),
+  updateReply: (postId, replyId, body) =>
+    request(`/api/posts/${postId}/replies/${replyId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body }),
+    }),
+  deleteReply: (postId, replyId) =>
+    request(`/api/posts/${postId}/replies/${replyId}`, {
+      method: 'DELETE',
+    }),
   toggleReaction: (payload) =>
     request('/api/reactions', {
       method: 'POST',

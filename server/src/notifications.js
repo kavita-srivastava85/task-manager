@@ -37,6 +37,21 @@ export function notifyMentions({
   }
 }
 
+/** Notify every account (except the sender) about discussion activity. */
+export function notifyEveryone({ postId, replyId = null, actorId }) {
+  const users = db.prepare(`SELECT id FROM users`).all();
+  for (const user of users) {
+    createNotification({
+      userId: user.id,
+      type: 'reply',
+      postId,
+      replyId,
+      actorId,
+      message: 'You have a new message',
+    });
+  }
+}
+
 export function mapNotification(row) {
   return {
     id: row.id,
