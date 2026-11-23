@@ -55,7 +55,6 @@ function ReplyNode({
   depth,
   canAccept,
   currentUserId,
-  isAdmin,
   isClosed,
   users,
   onAccept,
@@ -63,8 +62,7 @@ function ReplyNode({
   onEditReply,
   onDeleteReply,
 }) {
-  const canManage =
-    Number(reply.author.id) === Number(currentUserId) || Boolean(isAdmin);
+  const isOwnMessage = Number(reply.author.id) === Number(currentUserId);
   const [showNested, setShowNested] = useState(false);
   const [nestedBody, setNestedBody] = useState('');
   const [editing, setEditing] = useState(false);
@@ -127,7 +125,6 @@ function ReplyNode({
         <div className="reply-top">
           <p className="meta">
             {reply.author.displayName} · {formatWhen(reply.createdAt)}
-            {depth > 0 && <span className="nested-pill">Nested</span>}
             {reply.isAccepted && (
               <span className="accepted-badge">
                 <IconCheck /> Accepted solution
@@ -143,31 +140,6 @@ function ReplyNode({
               >
                 <IconCheck /> Accept
               </button>
-            )}
-            {canManage && !isClosed && !editing && (
-              <>
-                <button
-                  type="button"
-                  className="msg-action-btn"
-                  onClick={() => {
-                    setEditBody(reply.body);
-                    setEditing(true);
-                    setError('');
-                  }}
-                >
-                  <IconEdit size={14} /> Edit
-                </button>
-                <button
-                  type="button"
-                  className="msg-action-btn danger"
-                  onClick={() => {
-                    void remove();
-                  }}
-                  disabled={busy}
-                >
-                  <IconTrash size={14} /> Delete
-                </button>
-              </>
             )}
           </div>
         </div>
@@ -219,8 +191,8 @@ function ReplyNode({
             <button
               type="button"
               className="nested-reply-icon"
-              aria-label="Nested reply"
-              title="Nested reply"
+              aria-label="Reply"
+              title="Reply"
               onClick={() => {
                 setShowNested((v) => !v);
                 setError('');
@@ -229,6 +201,33 @@ function ReplyNode({
               <IconReply size={16} />
               <span>Reply</span>
             </button>
+          )}
+          {isOwnMessage && !editing && (
+            <>
+              {!isClosed && (
+                <button
+                  type="button"
+                  className="msg-action-btn"
+                  onClick={() => {
+                    setEditBody(reply.body);
+                    setEditing(true);
+                    setError('');
+                  }}
+                >
+                  <IconEdit size={14} /> Edit
+                </button>
+              )}
+              <button
+                type="button"
+                className="msg-action-btn danger"
+                onClick={() => {
+                  void remove();
+                }}
+                disabled={busy}
+              >
+                <IconTrash size={14} /> Delete
+              </button>
+            </>
           )}
         </div>
 
@@ -285,7 +284,6 @@ function ReplyNode({
               depth={depth + 1}
               canAccept={canAccept}
               currentUserId={currentUserId}
-              isAdmin={isAdmin}
               isClosed={isClosed}
               users={users}
               onAccept={onAccept}
@@ -439,7 +437,6 @@ export default function Thread() {
 
   const isAuthor = Number(user?.id) === Number(post.author.id);
   const canAccept = user?.role === 'admin' || isAuthor;
-  const canManagePost = isAuthor || user?.role === 'admin';
   const isClosed = post.status === 'closed';
 
   return (
@@ -449,31 +446,6 @@ export default function Thread() {
           ← Discussions
         </Link>
         <div className="thread-nav-actions">
-          {canManagePost && !isClosed && (
-            <>
-              <button
-                type="button"
-                className="msg-action-btn"
-                onClick={() => {
-                  setEditPostBody(post.body);
-                  setEditingPost(true);
-                  setHeadingOpen(true);
-                }}
-              >
-                <IconEdit size={14} /> Edit
-              </button>
-              <button
-                type="button"
-                className="msg-action-btn danger"
-                onClick={() => {
-                  void deletePost();
-                }}
-                disabled={busy}
-              >
-                <IconTrash size={14} /> Delete
-              </button>
-            </>
-          )}
           {isAuthor && !isClosed && (
             <button type="button" className="close-chat-btn" onClick={closeChat}>
               Close discussion
@@ -544,7 +516,36 @@ export default function Thread() {
         </p>
         <AttachmentList attachments={post.attachments} />
         <MentionChips mentions={post.mentions} />
-        <ReactionBar postId={post.id} initial={post.reactions} />
+        <div className="reply-message-actions">
+          <ReactionBar postId={post.id} initial={post.reactions} />
+          {isAuthor && !editingPost && (
+            <>
+              {!isClosed && (
+                <button
+                  type="button"
+                  className="msg-action-btn"
+                  onClick={() => {
+                    setEditPostBody(post.body);
+                    setEditingPost(true);
+                    setHeadingOpen(true);
+                  }}
+                >
+                  <IconEdit size={14} /> Edit
+                </button>
+              )}
+              <button
+                type="button"
+                className="msg-action-btn danger"
+                onClick={() => {
+                  void deletePost();
+                }}
+                disabled={busy}
+              >
+                <IconTrash size={14} /> Delete
+              </button>
+            </>
+          )}
+        </div>
       </article>
 
       <section className="replies reply-chain">
@@ -563,7 +564,6 @@ export default function Thread() {
               depth={0}
               canAccept={canAccept}
               currentUserId={user?.id}
-              isAdmin={user?.role === 'admin'}
               isClosed={isClosed}
               users={users}
               onAccept={acceptSolution}

@@ -632,9 +632,8 @@ app.post('/api/posts/:id/close', authRequired, (req, res) => {
 });
 
 function canModifyContent(reqUser, authorId) {
-  return (
-    Number(reqUser.id) === Number(authorId) || reqUser.role === 'admin'
-  );
+  // Only the person who wrote the message can edit/delete it
+  return Number(reqUser.id) === Number(authorId);
 }
 
 app.patch('/api/posts/:id', authRequired, (req, res) => {

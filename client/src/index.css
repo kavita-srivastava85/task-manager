@@ -866,10 +866,13 @@ textarea { resize: vertical; }
   align-items: center;
   gap: 0.45rem;
   flex-wrap: wrap;
-  margin-top: 0.15rem;
+  margin-top: 0.55rem;
 }
 .reply-message-actions .reaction-bar {
   margin-top: 0;
+}
+.thread-head .reply-message-actions {
+  margin-top: 0.7rem;
 }
 .nested-reply-icon {
   display: inline-flex;
