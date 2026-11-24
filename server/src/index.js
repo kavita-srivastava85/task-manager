@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import db from './db.js';
+import './ensureAccounts.js';
 import {
   authRequired,
   adminRequired,

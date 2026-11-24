@@ -25,7 +25,21 @@ First-time setup (only if the service does not exist yet):
 Notes:
 - Code on GitHub `main` is what Render builds.
 - Free Render apps may sleep when idle; first open can take ~30–60 seconds.
-- SQLite on free hosting can reset after some redeploys — recreate admin/employee logins on the live site if needed.
+- On each boot the app ensures known admin/employee accounts exist with password `Laptop@123` (override with env `DEFAULT_USER_PASSWORD`).
+
+### Logins (shared password)
+
+Password for all of these: **Laptop@123**
+
+| Role | Email |
+| --- | --- |
+| Admin | kavi.urpal@gmail.com |
+| Employee | kavita.srivastava85@gmail.com |
+| Employee | anshu@gmail.com |
+| Employee | admin@invoquesttechnologies.com |
+| Employee | rutuja_patil@invoquesttechnologies.com |
+| Employee | aarushi_goel@invoquesttechnologies.com |
+| Employee | ankit_agrawal@invoquesttechnologies.com |
 
 ## Local development (your machine only)
 
