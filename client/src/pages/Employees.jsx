@@ -4,8 +4,11 @@ import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { formatWhen } from '../components';
 import PasswordField from '../PasswordField';
-import { rememberLogin } from '../rememberedLogins';
-import { IconPlus, IconUsers } from '../icons';
+import {
+  forgetRememberedLogin,
+  rememberLogin,
+} from '../rememberedLogins';
+import { IconPlus, IconTrash, IconUsers } from '../icons';
 
 export default function Employees() {
   const { user } = useAuth();
@@ -15,10 +18,13 @@ export default function Employees() {
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [createdCred, setCreatedCred] = useState(null);
   const [copied, setCopied] = useState(false);
   const isAdmin = user?.role === 'admin';
+
+  const employeeAccounts = employees.filter((e) => e.role === 'employee');
 
   useEffect(() => {
     if (!isAdmin) return undefined;
@@ -39,6 +45,11 @@ export default function Employees() {
   }, [isAdmin]);
 
   if (!isAdmin) return <Navigate to="/discussions" replace />;
+
+  async function refreshEmployees() {
+    const { employees: next } = await api.listEmployees();
+    setEmployees(next);
+  }
 
   async function onCreate(e) {
     e.preventDefault();
@@ -65,11 +76,51 @@ export default function Employees() {
       setEmail('');
       setPassword('');
       setDisplayName('');
-      const { employees: next } = await api.listEmployees();
-      setEmployees(next);
+      await refreshEmployees();
     } catch (err) {
       setError(err.message);
       setCreatedCred(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDeleteOne(emp) {
+    const ok = window.confirm(
+      `Delete account for ${emp.displayName} (${emp.email})?\n\nYou can create it again afterward with a new password.`,
+    );
+    if (!ok) return;
+    setError('');
+    setDeletingId(emp.id);
+    try {
+      await api.deleteEmployee(emp.id);
+      forgetRememberedLogin(emp.email, 'employee');
+      if (createdCred?.email === emp.email) setCreatedCred(null);
+      await refreshEmployees();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function onDeleteAll() {
+    if (employeeAccounts.length === 0) return;
+    const ok = window.confirm(
+      `Delete all ${employeeAccounts.length} employee accounts?\n\nYour admin login stays. You can create new employee accounts after this.`,
+    );
+    if (!ok) return;
+    setError('');
+    setBusy(true);
+    try {
+      await api.deleteAllEmployees();
+      for (const emp of employeeAccounts) {
+        forgetRememberedLogin(emp.email, 'employee');
+      }
+      setCreatedCred(null);
+      await refreshEmployees();
+    } catch (err) {
+      setError(err.message);
     } finally {
       setBusy(false);
     }
@@ -95,6 +146,10 @@ export default function Employees() {
           </span>
           Employees
         </h1>
+        <p className="muted">
+          Create employee logins, or delete an account and recreate it with a
+          new password.
+        </p>
       </section>
 
       <section className="composer">
@@ -130,8 +185,8 @@ export default function Employees() {
             autoComplete="off"
           />
           {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={busy}>
-            {busy ? 'Creating…' : 'Create'}
+          <button type="submit" disabled={busy || deletingId != null}>
+            {busy ? 'Working…' : 'Create'}
           </button>
         </form>
       </section>
@@ -160,29 +215,49 @@ export default function Employees() {
       )}
 
       <section>
-        <h2 className="section-title">
-          <span className="title-icon users">
-            <IconUsers size={18} />
-          </span>
-          Accounts
-        </h2>
-        {loading && <p className="muted">Loading…</p>}
-        {!loading &&
-          employees.filter((e) => e.role === 'employee').length === 0 && (
-            <p className="muted">No employees yet.</p>
+        <div className="accounts-header">
+          <h2 className="section-title">
+            <span className="title-icon users">
+              <IconUsers size={18} />
+            </span>
+            Accounts
+          </h2>
+          {employeeAccounts.length > 0 && (
+            <button
+              type="button"
+              className="btn-danger-outline"
+              disabled={busy || deletingId != null}
+              onClick={onDeleteAll}
+            >
+              <IconTrash size={14} /> Delete all employees
+            </button>
           )}
+        </div>
+        {loading && <p className="muted">Loading…</p>}
+        {!loading && employeeAccounts.length === 0 && (
+          <p className="muted">No employees yet. Create one above.</p>
+        )}
         <ul className="employee-list">
-          {employees
-            .filter((emp) => emp.role === 'employee')
-            .map((emp) => (
-              <li key={emp.id}>
+          {employeeAccounts.map((emp) => (
+            <li key={emp.id} className="employee-row">
+              <div className="employee-meta">
                 <strong>{emp.displayName}</strong>
                 <span className="muted">
                   {' '}
                   · {emp.email} · {formatWhen(emp.createdAt)}
                 </span>
-              </li>
-            ))}
+              </div>
+              <button
+                type="button"
+                className="btn-danger-outline compact"
+                disabled={busy || deletingId != null}
+                onClick={() => onDeleteOne(emp)}
+              >
+                <IconTrash size={14} />
+                {deletingId === emp.id ? 'Deleting…' : 'Delete'}
+              </button>
+            </li>
+          ))}
         </ul>
       </section>
     </div>

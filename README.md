@@ -27,9 +27,9 @@ Notes:
 - Free Render apps may sleep when idle; first open can take ~30–60 seconds.
 - On each boot the app ensures known admin/employee accounts exist with password `Laptop@123` (override with env `DEFAULT_USER_PASSWORD`).
 
-### Logins (shared password)
+### Logins (first-boot seed)
 
-Password for all of these: **Laptop@123**
+On a brand-new empty database, these accounts are created with password **Laptop@123**. After that, the admin can delete any employee account (or all of them) on the **Employees** page and recreate it with a new password. Deleted accounts are not restored on restart.
 
 | Role | Email |
 | --- | --- |

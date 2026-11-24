@@ -1,12 +1,12 @@
 import db from './db.js';
 import { hashPassword } from './auth.js';
 
-/** Shared login password for seeded accounts (override with DEFAULT_USER_PASSWORD). */
+/** Shared login password for first-boot seed only (override with DEFAULT_USER_PASSWORD). */
 const sharedPassword = process.env.DEFAULT_USER_PASSWORD || 'Laptop@123';
 
 /**
- * Ensure admin + known employees exist with the shared password.
- * Runs on every boot so Render rebuilds (fresh SQLite) stay usable.
+ * Seed known accounts only on an empty database (fresh Render disk).
+ * Does not recreate accounts the admin deleted, and does not overwrite passwords.
  */
 const accounts = [
   {
@@ -46,29 +46,24 @@ const accounts = [
   },
 ];
 
-const passwordHash = hashPassword(sharedPassword);
+const userCount = db.prepare(`SELECT COUNT(*) AS c FROM users`).get().c;
+if (userCount > 0) {
+  console.log('Accounts already present; skipping first-boot seed.');
+} else {
+  const passwordHash = hashPassword(sharedPassword);
+  const insert = db.prepare(
+    `INSERT INTO users (email, password_hash, role, display_name)
+     VALUES (?, ?, ?, ?)`,
+  );
 
-const insert = db.prepare(
-  `INSERT INTO users (email, password_hash, role, display_name)
-   VALUES (?, ?, ?, ?)`,
-);
-const update = db.prepare(
-  `UPDATE users SET password_hash = ?, role = ?, display_name = ? WHERE email = ?`,
-);
-
-const sync = db.transaction(() => {
-  for (const account of accounts) {
-    const email = account.email.trim().toLowerCase();
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (existing) {
-      update.run(passwordHash, account.role, account.displayName, email);
-    } else {
+  db.transaction(() => {
+    for (const account of accounts) {
+      const email = account.email.trim().toLowerCase();
       insert.run(email, passwordHash, account.role, account.displayName);
     }
-  }
-});
+  })();
 
-sync();
-console.log(
-  `Ensured ${accounts.length} accounts with shared password (DEFAULT_USER_PASSWORD).`,
-);
+  console.log(
+    `Seeded ${accounts.length} accounts on empty database (password from DEFAULT_USER_PASSWORD).`,
+  );
+}

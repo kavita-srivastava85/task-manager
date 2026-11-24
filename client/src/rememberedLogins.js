@@ -43,3 +43,15 @@ export function getLastRemembered(role) {
   const list = getRememberedLogins(role);
   return list[0] || null;
 }
+
+export function forgetRememberedLogin(email, role = 'employee') {
+  const cleanEmail = String(email || '')
+    .trim()
+    .toLowerCase();
+  if (!cleanEmail) return;
+  const next = readAll().filter(
+    (item) =>
+      !(item.email.toLowerCase() === cleanEmail && item.role === role),
+  );
+  writeAll(next);
+}

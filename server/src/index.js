@@ -501,6 +501,61 @@ app.post('/api/admin/employees', authRequired, adminRequired, (req, res) => {
   }
 });
 
+function deleteEmployeeById(employeeId) {
+  const user = db
+    .prepare('SELECT id, role FROM users WHERE id = ?')
+    .get(employeeId);
+  if (!user) return { error: 'Account not found', status: 404 };
+  if (user.role !== 'employee') {
+    return { error: 'Only employee accounts can be deleted', status: 400 };
+  }
+
+  db.transaction(() => {
+    // Clear reply acceptance links before cascading deletes.
+    db.prepare(
+      `UPDATE posts SET accepted_reply_id = NULL
+       WHERE accepted_reply_id IN (SELECT id FROM replies WHERE author_id = ?)`,
+    ).run(employeeId);
+    db.prepare(
+      `UPDATE posts SET accepted_reply_id = NULL WHERE author_id = ?`,
+    ).run(employeeId);
+    db.prepare('DELETE FROM users WHERE id = ?').run(employeeId);
+  })();
+
+  return { ok: true };
+}
+
+app.delete(
+  '/api/admin/employees/:id',
+  authRequired,
+  adminRequired,
+  (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: 'Invalid account id' });
+    }
+    const result = deleteEmployeeById(id);
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    res.json({ ok: true, deletedId: id });
+  },
+);
+
+app.delete('/api/admin/employees', authRequired, adminRequired, (_req, res) => {
+  const employees = db
+    .prepare(`SELECT id FROM users WHERE role = 'employee'`)
+    .all();
+  const deletedIds = [];
+  db.transaction(() => {
+    for (const row of employees) {
+      const result = deleteEmployeeById(row.id);
+      if (!result.error) deletedIds.push(row.id);
+    }
+  })();
+  res.json({ ok: true, deletedCount: deletedIds.length, deletedIds });
+});
+
 app.get('/api/users', authRequired, (_req, res) => {
   const users = db
     .prepare(

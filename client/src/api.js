@@ -70,6 +70,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  deleteEmployee: (id) =>
+    request(`/api/admin/employees/${id}`, { method: 'DELETE' }),
+  deleteAllEmployees: () =>
+    request('/api/admin/employees', { method: 'DELETE' }),
   listUsers: () => request('/api/users'),
   listPosts: () => request('/api/posts'),
   getPost: (id) => request(`/api/posts/${id}`),
