@@ -7,19 +7,25 @@ Web app for admin-provisioned employee discussions (works on laptop and mobile b
 `http://localhost:5173` only works on **your** computer.  
 To let other employees open it on **any laptop or phone**, deploy once, then share the **public HTTPS URL** (for example `https://task-manager-xxxx.onrender.com`).
 
-### Deploy on Render (recommended)
+### Deploy / redeploy on Render
 
-1. Open [https://dashboard.render.com](https://dashboard.render.com) and sign in (GitHub login is fine).
-2. **New +** → **Blueprint** → connect `kavita-srivastava85/task-manager`.
-3. Apply the included `render.yaml` (free web service).
-4. After deploy finishes, open the service and copy its URL, like:
-   - `https://task-manager.onrender.com`  
-     (exact subdomain is shown on your Render dashboard)
-5. Share **that URL** with employees for web and mobile.
+Live URL: **https://task-manager.onrender.com**
+
+1. Open [https://dashboard.render.com](https://dashboard.render.com) and sign in.
+2. Open the **task-manager** web service.
+3. If it says **Suspended**, click **Resume**.
+4. Click **Manual Deploy** → **Deploy latest commit** (branch `main`).
+5. Wait until status is **Live**, then open https://task-manager.onrender.com
+6. Share that URL with employees for laptop and mobile.
+
+First-time setup (only if the service does not exist yet):
+1. **New +** → **Blueprint** → connect `kavita-srivastava85/task-manager`
+2. Apply `render.yaml`
 
 Notes:
-- Free Render apps may sleep after idle time; the first open can take ~30–60 seconds.
-- SQLite data on free hosting can reset if the service is rebuilt — keep employee passwords written down.
+- Code on GitHub `main` is what Render builds.
+- Free Render apps may sleep when idle; first open can take ~30–60 seconds.
+- SQLite on free hosting can reset after some redeploys — recreate admin/employee logins on the live site if needed.
 
 ## Local development (your machine only)
 
