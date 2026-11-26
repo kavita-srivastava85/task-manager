@@ -270,6 +270,60 @@ textarea { resize: vertical; }
   font-weight: 800 !important;
   letter-spacing: -0.03em;
 }
+.welcome-brand-block {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.7rem;
+  margin: 0 0 0.85rem;
+  animation: brand-rise 520ms ease both;
+}
+@keyframes brand-rise {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.welcome-brand-icon {
+  width: 3rem !important;
+  height: 3rem !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 24px rgba(14, 116, 144, 0.35);
+  animation: icon-pop 2.8s ease-in-out infinite;
+}
+@keyframes icon-pop {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+.welcome-brand-title {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.4rem 0.55rem;
+  line-height: 1;
+}
+.welcome-brand-main {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 700;
+  font-size: clamp(2.05rem, 7vw, 2.65rem);
+  letter-spacing: -0.04em;
+  background: linear-gradient(120deg, #0f766e 0%, #0369a1 45%, #ea580c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.welcome-brand-app {
+  font-family: 'Sora', 'Manrope', sans-serif;
+  font-weight: 800;
+  font-size: clamp(1.05rem, 3.5vw, 1.25rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #0f766e;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.35), rgba(125, 211, 252, 0.4));
+  border: 1px solid rgba(45, 212, 191, 0.65);
+}
 .brand-icon-lg {
   width: 2.15rem !important;
   height: 2.15rem !important;

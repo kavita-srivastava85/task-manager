@@ -39,12 +39,15 @@ export default function Welcome() {
     <div className="welcome-page compact">
       <div className="welcome-panel catchy">
         <div className="welcome-glow" aria-hidden="true" />
-        <p className="brand-mark hero-brand welcome-brand">
-          <span className="brand-icon brand-icon-lg">
-            <IconChat size={26} />
+        <div className="welcome-brand-block">
+          <span className="brand-icon brand-icon-lg welcome-brand-icon">
+            <IconChat size={28} />
           </span>
-          Discussions App
-        </p>
+          <h1 className="welcome-brand-title">
+            <span className="welcome-brand-main">Discussions</span>
+            <span className="welcome-brand-app">App</span>
+          </h1>
+        </div>
         <p className="welcome-tagline italic-appeal">
           Team conversations in one place
         </p>
