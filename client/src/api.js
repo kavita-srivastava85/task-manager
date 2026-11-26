@@ -74,8 +74,25 @@ export const api = {
     request(`/api/admin/employees/${id}`, { method: 'DELETE' }),
   deleteAllEmployees: () =>
     request('/api/admin/employees', { method: 'DELETE' }),
+  setEmployeeRole: (id, role) =>
+    request(`/api/admin/employees/${id}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+  getAccount: () => request('/api/account'),
+  changePassword: (payload) =>
+    request('/api/account/password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   listUsers: () => request('/api/users'),
-  listPosts: () => request('/api/posts'),
+  listPosts: (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    if (params.mine) qs.set('mine', '1');
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return request(`/api/posts${suffix}`);
+  },
   getPost: (id) => request(`/api/posts/${id}`),
   createPost: (formData) =>
     request('/api/posts', { method: 'POST', body: formData }),
@@ -90,18 +107,35 @@ export const api = {
     }),
   closePost: (postId) =>
     request(`/api/posts/${postId}/close`, { method: 'POST' }),
-  updatePost: (postId, body) =>
-    request(`/api/posts/${postId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ body }),
-    }),
+  reopenPost: (postId) =>
+    request(`/api/posts/${postId}/reopen`, { method: 'POST' }),
+  updatePost: (postId, formDataOrBody) => {
+    if (formDataOrBody instanceof FormData) {
+      return request(`/api/posts/${postId}`, {
+        method: 'PATCH',
+        body: formDataOrBody,
+      });
+    }
+    const fd = new FormData();
+    fd.append('body', formDataOrBody);
+    return request(`/api/posts/${postId}`, { method: 'PATCH', body: fd });
+  },
   deletePost: (postId) =>
     request(`/api/posts/${postId}`, { method: 'DELETE' }),
-  updateReply: (postId, replyId, body) =>
-    request(`/api/posts/${postId}/replies/${replyId}`, {
+  updateReply: (postId, replyId, formDataOrBody) => {
+    if (formDataOrBody instanceof FormData) {
+      return request(`/api/posts/${postId}/replies/${replyId}`, {
+        method: 'PATCH',
+        body: formDataOrBody,
+      });
+    }
+    const fd = new FormData();
+    fd.append('body', formDataOrBody);
+    return request(`/api/posts/${postId}/replies/${replyId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ body }),
-    }),
+      body: fd,
+    });
+  },
   deleteReply: (postId, replyId) =>
     request(`/api/posts/${postId}/replies/${replyId}`, {
       method: 'DELETE',
@@ -116,5 +150,6 @@ export const api = {
     request(`/api/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     request('/api/notifications/read-all', { method: 'POST' }),
-  attachmentUrl: (id) => `/api/attachments/${id}`,
+  attachmentUrl: (id, { inline = false } = {}) =>
+    `/api/attachments/${id}${inline ? '?inline=1' : ''}`,
 };

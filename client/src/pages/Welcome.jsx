@@ -2,7 +2,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../AuthContext';
 import { api } from '../api';
-import { IconChat, IconShield, IconUsers } from '../icons';
+import { IconChat } from '../icons';
 
 export default function Welcome() {
   const { user, loading } = useAuth();
@@ -23,52 +23,38 @@ export default function Welcome() {
     };
   }, []);
 
-  if (loading) {
+  if (loading || needsAdminSignup === null) {
     return (
-      <div className="auth-page">
+      <div className="auth-page compact">
         <p className="muted">Loading…</p>
       </div>
     );
   }
 
-  if (user?.role === 'admin') {
-    return <Navigate to="/admin/employees" replace />;
-  }
   if (user) {
     return <Navigate to="/discussions" replace />;
   }
 
   return (
-    <div className="welcome-page">
+    <div className="welcome-page compact">
       <div className="welcome-panel">
-        <p className="brand-mark">
+        <p className="brand-mark hero-brand">
           <span className="brand-icon">
-            <IconChat size={20} />
+            <IconChat size={22} />
           </span>
           Discussions App
         </p>
-        <div className="portal-actions">
-          <Link
-            className="portal-card primary"
-            to={needsAdminSignup ? '/admin/signup' : '/admin'}
-          >
-            <span className="portal-icon">
-              <IconShield size={22} />
-            </span>
-            <span className="portal-title">Admin</span>
-          </Link>
-          <Link
-            className={`portal-card${needsAdminSignup ? ' disabled-look' : ''}`}
-            to="/employee/login"
-            onClick={(e) => {
-              if (needsAdminSignup) e.preventDefault();
-            }}
-          >
-            <span className="portal-icon">
-              <IconUsers size={22} />
-            </span>
-            <span className="portal-title">Employee</span>
-          </Link>
+        <p className="welcome-tagline">Team conversations in one place.</p>
+        <div className="portal-actions single-col">
+          {needsAdminSignup ? (
+            <Link className="portal-card primary" to="/admin/signup">
+              <span className="portal-title">Get started</span>
+            </Link>
+          ) : (
+            <Link className="portal-card primary" to="/login">
+              <span className="portal-title">Sign in</span>
+            </Link>
+          )}
         </div>
       </div>
     </div>

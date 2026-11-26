@@ -54,7 +54,6 @@ export default function NotificationBell() {
       // still open the discussion
     }
 
-    // Always open that discussion thread
     navigate(`/posts/${postId}`);
   }
 
@@ -71,7 +70,11 @@ export default function NotificationBell() {
       <button
         type="button"
         className="notif-bell"
-        aria-label="Notifications"
+        aria-label={
+          unreadCount > 0
+            ? `${unreadCount} notifications`
+            : 'Notifications'
+        }
         onClick={() => {
           setOpen((v) => !v);
           load();
@@ -87,10 +90,10 @@ export default function NotificationBell() {
       {open && (
         <div className="notif-panel">
           <div className="notif-head">
-            <strong>Notifications</strong>
+            <strong>{unreadCount > 0 ? unreadCount : 'Inbox'}</strong>
             {unreadCount > 0 && (
               <button type="button" className="linkish" onClick={markAll}>
-                Mark all read
+                Clear
               </button>
             )}
           </div>
@@ -108,7 +111,14 @@ export default function NotificationBell() {
                       onOpenItem(item);
                     }}
                   >
-                    <span className="notif-msg">{item.message}</span>
+                    <span className="notif-msg">
+                      {item.actor?.displayName || 'Someone'}
+                      {item.type === 'mention'
+                        ? ' tagged you'
+                        : item.type === 'accepted_solution'
+                          ? ' accepted your reply'
+                          : ''}
+                    </span>
                     <span className="muted notif-time">
                       {formatWhen(item.createdAt)}
                     </span>

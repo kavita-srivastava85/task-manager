@@ -30,10 +30,15 @@ export default function Feed() {
   const [loading, setLoading] = useState(true);
   const [showComposer, setShowComposer] = useState(false);
   const [mobileTab, setMobileTab] = useState('recent');
+  const [search, setSearch] = useState('');
+  const [searchBusy, setSearchBusy] = useState(false);
 
-  async function load() {
+  async function load(q = '') {
+    const query = String(q || '').trim();
     const [{ posts: next }, { users: directory }] = await Promise.all([
-      api.listPosts(),
+      query
+        ? api.listPosts({ q: query, mine: true })
+        : api.listPosts(),
       api.listUsers(),
     ]);
     setPosts(next);
@@ -56,6 +61,19 @@ export default function Feed() {
     };
   }, []);
 
+  useEffect(() => {
+    // Skip initial mount — the first load effect already fetches.
+    if (loading) return undefined;
+    const q = search.trim();
+    const timer = setTimeout(() => {
+      setSearchBusy(true);
+      load(q)
+        .catch((err) => setError(err.message))
+        .finally(() => setSearchBusy(false));
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const allOpen = useMemo(
     () => posts.filter((p) => (p.status || 'open') === 'open'),
     [posts],
@@ -69,6 +87,7 @@ export default function Feed() {
     [posts, user?.id],
   );
   const recentAll = useMemo(() => posts.slice(0, 4), [posts]);
+  const isSearching = search.trim().length > 0;
 
   async function onCreate(e) {
     e.preventDefault();
@@ -94,8 +113,37 @@ export default function Feed() {
     }
   }
 
+  async function clearSearch() {
+    setSearch('');
+    setSearchBusy(true);
+    try {
+      await load('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSearchBusy(false);
+    }
+  }
+
   return (
     <div className="chat-layout three-col">
+      <div className="feed-search-bar">
+        <input
+          type="search"
+          className="feed-search-input"
+          placeholder="Search my discussions…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search my discussions"
+        />
+        {isSearching && (
+          <button type="button" className="linkish" onClick={clearSearch}>
+            Clear
+          </button>
+        )}
+        {searchBusy && <span className="muted">Searching…</span>}
+      </div>
+
       <div className="mobile-feed-tabs" role="tablist" aria-label="Discussions">
         <button
           type="button"
@@ -134,7 +182,9 @@ export default function Feed() {
         </h2>
         {loading && <p className="muted">Loading…</p>}
         {!loading && allOpen.length === 0 && (
-          <p className="muted side-empty">No open discussions</p>
+          <p className="muted side-empty">
+            {isSearching ? 'No matches' : 'No open discussions'}
+          </p>
         )}
         <ul className="side-chat-list">
           {allOpen.map((post) => (
@@ -144,7 +194,9 @@ export default function Feed() {
 
         <h2 className="side-heading closed">Closed</h2>
         {!loading && allClosed.length === 0 && (
-          <p className="muted side-empty">No closed discussions</p>
+          <p className="muted side-empty">
+            {isSearching ? 'No matches' : 'No closed discussions'}
+          </p>
         )}
         <ul className="side-chat-list">
           {allClosed.map((post) => (
@@ -201,10 +253,14 @@ export default function Feed() {
           </form>
         )}
 
-        <h2 className="center-recent-title">Recent</h2>
+        <h2 className="center-recent-title">
+          {isSearching ? 'Search results' : 'Recent'}
+        </h2>
         {loading && <p className="muted">Loading…</p>}
         {!loading && recentAll.length === 0 && (
-          <p className="muted">No discussions yet.</p>
+          <p className="muted">
+            {isSearching ? 'No matching discussions.' : 'No discussions yet.'}
+          </p>
         )}
         <ul className="center-recent-list">
           {recentAll.map((post) => (
@@ -227,7 +283,7 @@ export default function Feed() {
         className={`chat-side chat-side-right mobile-panel${mobileTab === 'mine' ? ' mobile-show' : ''}`}
       >
         <h2 className="side-heading">
-          <IconChat size={16} /> My discussions
+          <IconChat size={16} /> Mine
         </h2>
         {loading && <p className="muted">Loading…</p>}
         {!loading && myChats.length === 0 && (

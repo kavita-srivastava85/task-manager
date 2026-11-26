@@ -10,27 +10,24 @@ export default function ResetPassword() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const token = params.get('token') || '';
-  const mode = params.get('mode') === 'admin' ? 'admin' : 'employee';
+  const modeParam = params.get('mode') === 'admin' ? 'admin' : 'employee';
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (user?.role === 'admin') {
-    return <Navigate to="/admin/employees" replace />;
-  }
   if (user) {
     return <Navigate to="/discussions" replace />;
   }
 
   if (!token) {
     return (
-      <div className="auth-page">
+      <div className="auth-page compact">
         <div className="auth-panel">
           <p className="error">Missing reset link.</p>
           <p className="switch-link">
-            <Link to={`/forgot-password?mode=${mode}`}>Forgot password</Link>
+            <Link to={`/forgot-password?mode=${modeParam}`}>Forgot password</Link>
           </p>
         </div>
       </div>
@@ -49,8 +46,9 @@ export default function ResetPassword() {
     try {
       const result = await api.resetPassword({ token, password });
       setOk('Password updated.');
-      const loginPath =
-        result.role === 'admin' ? '/admin/login' : '/employee/login';
+      // Prefer actual account role from API; fall back to URL mode.
+      const role = result.role || modeParam;
+      const loginPath = role === 'admin' ? '/admin/login' : '/login';
       setTimeout(() => navigate(loginPath, { replace: true }), 700);
     } catch (err) {
       setError(err.message || 'Could not reset password');
@@ -60,19 +58,21 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-page compact">
       <div className="auth-panel">
-        <p className="brand-mark">
+        <div className="auth-top-row">
+          <Link to={`/forgot-password?mode=${modeParam}`} className="back-chip">
+            ← Back
+          </Link>
+        </div>
+        <p className="brand-mark hero-brand">
           <span className="brand-icon">
-            <IconChat size={18} />
+            <IconChat size={20} />
           </span>
           Discussions App
         </p>
-        <p className="back-row">
-          <Link to={`/forgot-password?mode=${mode}`}>← Back</Link>
-        </p>
-        <h1>Reset password</h1>
-        <form onSubmit={onSubmit} className="stack">
+        <p className="auth-subtitle">Choose a new password</p>
+        <form onSubmit={onSubmit} className="stack tight">
           <PasswordField
             label="New password"
             value={password}
@@ -91,7 +91,7 @@ export default function ResetPassword() {
           />
           {error && <p className="error">{error}</p>}
           {ok && <p className="ok">{ok}</p>}
-          <button type="submit" disabled={busy}>
+          <button type="submit" className="btn-compact" disabled={busy}>
             {busy ? 'Saving…' : 'Update password'}
           </button>
         </form>

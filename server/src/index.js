@@ -19,7 +19,7 @@ import {
 import { parseMentions } from './mentions.js';
 import {
   createNotification,
-  notifyEveryone,
+  notifyMentions,
   mapNotification,
 } from './notifications.js';
 
@@ -566,7 +566,13 @@ app.get('/api/users', authRequired, (_req, res) => {
 });
 
 app.get('/api/posts', authRequired, (req, res) => {
-  const rows = db
+  const q = String(req.query?.q || '')
+    .trim()
+    .toLowerCase();
+  const mine = String(req.query?.mine || '') === '1';
+  const uid = req.user.id;
+
+  let rows = db
     .prepare(
       `SELECT p.*,
               u.email AS author_email,
@@ -578,6 +584,26 @@ app.get('/api/posts', authRequired, (req, res) => {
        ORDER BY p.updated_at DESC, p.created_at DESC`,
     )
     .all();
+
+  if (mine || q) {
+    rows = rows.filter((row) => {
+      const isAuthor = Number(row.author_id) === Number(uid);
+      const participated =
+        isAuthor ||
+        Boolean(
+          db
+            .prepare(
+              `SELECT 1 AS ok FROM replies WHERE post_id = ? AND author_id = ? LIMIT 1`,
+            )
+            .get(row.id, uid),
+        );
+      if ((mine || q) && !participated) return false;
+      if (!q) return true;
+      const hay = `${row.title || ''} ${row.body || ''} ${row.author_display_name || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
   res.json({ posts: rows.map((row) => mapPost(row, req.user.id)) });
 });
 
@@ -604,9 +630,10 @@ app.post('/api/posts', authRequired, upload.array('files', 5), (req, res) => {
       .prepare(`INSERT INTO posts (author_id, title, body) VALUES (?, ?, ?)`)
       .run(req.user.id, title, body);
     const postId = result.lastInsertRowid;
-    saveMentions({ postId, body });
+    const mentioned = saveMentions({ postId, body });
     saveAttachments({ postId, files: req.files || [] });
-    notifyEveryone({
+    notifyMentions({
+      mentionedUsers: mentioned,
       postId,
       actorId: req.user.id,
     });
@@ -661,127 +688,211 @@ app.get('/api/posts/:id', authRequired, (req, res) => {
   res.json({ post: mapPost(row, req.user.id), replies });
 });
 
+function loadPostRow(id) {
+  return db
+    .prepare(
+      `SELECT p.*,
+              u.email AS author_email,
+              u.display_name AS author_display_name,
+              u.role AS author_role,
+              (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
+       FROM posts p JOIN users u ON u.id = p.author_id
+       WHERE p.id = ?`,
+    )
+    .get(id);
+}
+
+function canCloseOrReopen(reqUser, post) {
+  return (
+    reqUser.role === 'admin' || Number(reqUser.id) === Number(post.author_id)
+  );
+}
+
 app.post('/api/posts/:id/close', authRequired, (req, res) => {
   const id = Number(req.params.id);
   const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
-  if (post.author_id !== req.user.id) {
-    return res
-      .status(403)
-      .json({ error: 'Only the person who started the discussion can close it' });
+  if (!canCloseOrReopen(req.user, post)) {
+    return res.status(403).json({
+      error: 'Only the starter or an admin can close this discussion',
+    });
   }
   db.prepare(
     `UPDATE posts SET status = 'closed', updated_at = datetime('now') WHERE id = ?`,
   ).run(id);
-  const row = db
-    .prepare(
-      `SELECT p.*,
-              u.email AS author_email,
-              u.display_name AS author_display_name,
-              u.role AS author_role,
-              (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
-       FROM posts p JOIN users u ON u.id = p.author_id
-       WHERE p.id = ?`,
-    )
-    .get(id);
-  res.json({ post: mapPost(row, req.user.id) });
+  res.json({ post: mapPost(loadPostRow(id), req.user.id) });
+});
+
+app.post('/api/posts/:id/reopen', authRequired, (req, res) => {
+  const id = Number(req.params.id);
+  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!canCloseOrReopen(req.user, post)) {
+    return res.status(403).json({
+      error: 'Only the starter or an admin can reopen this discussion',
+    });
+  }
+  db.prepare(
+    `UPDATE posts SET status = 'open', updated_at = datetime('now') WHERE id = ?`,
+  ).run(id);
+  res.json({ post: mapPost(loadPostRow(id), req.user.id) });
 });
 
 function canModifyContent(reqUser, authorId) {
-  // Only the person who wrote the message can edit/delete it
-  return Number(reqUser.id) === Number(authorId);
+  // Author or admin can edit/delete messages
+  return (
+    reqUser.role === 'admin' || Number(reqUser.id) === Number(authorId)
+  );
 }
 
-app.patch('/api/posts/:id', authRequired, (req, res) => {
+function parseRemoveAttachmentIds(raw) {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) {
+    return raw.map(Number).filter((n) => Number.isFinite(n));
+  }
+  try {
+    const parsed = JSON.parse(String(raw));
+    if (Array.isArray(parsed)) {
+      return parsed.map(Number).filter((n) => Number.isFinite(n));
+    }
+  } catch {
+    // comma-separated fallback
+  }
+  return String(raw)
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n));
+}
+
+function removeAttachmentsByIds(ids, { postId = null, replyId = null }) {
+  for (const attId of ids) {
+    const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(attId);
+    if (!att) continue;
+    if (postId != null && Number(att.post_id) !== Number(postId)) continue;
+    if (replyId != null && Number(att.reply_id) !== Number(replyId)) continue;
+    const filePath = path.join(UPLOAD_DIR, att.stored_name);
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch {
+      // ignore disk cleanup errors
+    }
+    db.prepare('DELETE FROM attachments WHERE id = ?').run(attId);
+  }
+}
+
+app.patch(
+  '/api/posts/:id',
+  authRequired,
+  upload.array('files', 5),
+  (req, res) => {
+    const id = Number(req.params.id);
+    const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (!canModifyContent(req.user, post.author_id)) {
+      return res.status(403).json({ error: 'Not allowed to edit this message' });
+    }
+    if ((post.status || 'open') === 'closed') {
+      return res.status(400).json({ error: 'This discussion is closed' });
+    }
+    const body = String(req.body?.body || '').trim();
+    if (!body) return res.status(400).json({ error: 'Message required' });
+    const title = titleFromBody(body);
+    const removeIds = parseRemoveAttachmentIds(req.body?.removeAttachmentIds);
+
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE posts SET body = ?, title = ?, updated_at = datetime('now') WHERE id = ?`,
+      ).run(body, title, id);
+      db.prepare(`DELETE FROM mentions WHERE post_id = ?`).run(id);
+      saveMentions({ postId: id, body });
+      removeAttachmentsByIds(removeIds, { postId: id });
+      saveAttachments({ postId: id, files: req.files || [] });
+    })();
+
+    res.json({ post: mapPost(loadPostRow(id), req.user.id) });
+  },
+);
+
+app.delete('/api/posts/:id', authRequired, adminRequired, (req, res) => {
   const id = Number(req.params.id);
   const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
-  if (!canModifyContent(req.user, post.author_id)) {
-    return res.status(403).json({ error: 'Not allowed to edit this message' });
-  }
-  if ((post.status || 'open') === 'closed') {
-    return res.status(400).json({ error: 'This discussion is closed' });
-  }
-  const body = String(req.body?.body || '').trim();
-  if (!body) return res.status(400).json({ error: 'Message required' });
-  const title = titleFromBody(body);
-
-  db.transaction(() => {
-    db.prepare(
-      `UPDATE posts SET body = ?, title = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(body, title, id);
-    db.prepare(`DELETE FROM mentions WHERE post_id = ?`).run(id);
-    saveMentions({ postId: id, body });
-  })();
-
-  const row = db
+  // Whole-discussion delete is admin-only
+  const atts = db
+    .prepare(`SELECT stored_name FROM attachments WHERE post_id = ?`)
+    .all(id);
+  const replyAtts = db
     .prepare(
-      `SELECT p.*,
-              u.email AS author_email,
-              u.display_name AS author_display_name,
-              u.role AS author_role,
-              (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
-       FROM posts p JOIN users u ON u.id = p.author_id
-       WHERE p.id = ?`,
+      `SELECT a.stored_name FROM attachments a
+       JOIN replies r ON r.id = a.reply_id
+       WHERE r.post_id = ?`,
     )
-    .get(id);
-  res.json({ post: mapPost(row, req.user.id) });
-});
-
-app.delete('/api/posts/:id', authRequired, (req, res) => {
-  const id = Number(req.params.id);
-  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
-  if (!post) return res.status(404).json({ error: 'Post not found' });
-  if (!canModifyContent(req.user, post.author_id)) {
-    return res.status(403).json({ error: 'Not allowed to delete this message' });
+    .all(id);
+  for (const att of [...atts, ...replyAtts]) {
+    const filePath = path.join(UPLOAD_DIR, att.stored_name);
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch {
+      // ignore
+    }
   }
   db.prepare(`DELETE FROM posts WHERE id = ?`).run(id);
   res.json({ ok: true });
 });
 
-app.patch('/api/posts/:postId/replies/:replyId', authRequired, (req, res) => {
-  const postId = Number(req.params.postId);
-  const replyId = Number(req.params.replyId);
-  const post = db.prepare('SELECT id, status FROM posts WHERE id = ?').get(postId);
-  if (!post) return res.status(404).json({ error: 'Post not found' });
-  if ((post.status || 'open') === 'closed') {
-    return res.status(400).json({ error: 'This discussion is closed' });
-  }
-  const reply = db.prepare('SELECT * FROM replies WHERE id = ?').get(replyId);
-  if (!reply || Number(reply.post_id) !== postId) {
-    return res.status(404).json({ error: 'Reply not found' });
-  }
-  if (!canModifyContent(req.user, reply.author_id)) {
-    return res.status(403).json({ error: 'Not allowed to edit this message' });
-  }
-  const body = String(req.body?.body || '').trim();
-  if (!body) return res.status(400).json({ error: 'Message required' });
+app.patch(
+  '/api/posts/:postId/replies/:replyId',
+  authRequired,
+  upload.array('files', 5),
+  (req, res) => {
+    const postId = Number(req.params.postId);
+    const replyId = Number(req.params.replyId);
+    const post = db
+      .prepare('SELECT id, status FROM posts WHERE id = ?')
+      .get(postId);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if ((post.status || 'open') === 'closed') {
+      return res.status(400).json({ error: 'This discussion is closed' });
+    }
+    const reply = db.prepare('SELECT * FROM replies WHERE id = ?').get(replyId);
+    if (!reply || Number(reply.post_id) !== postId) {
+      return res.status(404).json({ error: 'Reply not found' });
+    }
+    if (!canModifyContent(req.user, reply.author_id)) {
+      return res.status(403).json({ error: 'Not allowed to edit this message' });
+    }
+    const body = String(req.body?.body || '').trim();
+    if (!body) return res.status(400).json({ error: 'Message required' });
+    const removeIds = parseRemoveAttachmentIds(req.body?.removeAttachmentIds);
 
-  db.transaction(() => {
-    db.prepare(`UPDATE replies SET body = ? WHERE id = ?`).run(body, replyId);
-    db.prepare(`DELETE FROM mentions WHERE reply_id = ?`).run(replyId);
-    saveMentions({ replyId, body });
-    db.prepare(
-      `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
-    ).run(postId);
-  })();
+    db.transaction(() => {
+      db.prepare(`UPDATE replies SET body = ? WHERE id = ?`).run(body, replyId);
+      db.prepare(`DELETE FROM mentions WHERE reply_id = ?`).run(replyId);
+      saveMentions({ replyId, body });
+      removeAttachmentsByIds(removeIds, { replyId });
+      saveAttachments({ replyId, files: req.files || [] });
+      db.prepare(
+        `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
+      ).run(postId);
+    })();
 
-  const r = db
-    .prepare(
-      `SELECT r.*,
-              u.email AS author_email,
-              u.display_name AS author_display_name,
-              u.role AS author_role
-       FROM replies r
-       JOIN users u ON u.id = r.author_id
-       WHERE r.id = ?`,
-    )
-    .get(replyId);
-  const accepted = db
-    .prepare('SELECT accepted_reply_id FROM posts WHERE id = ?')
-    .get(postId)?.accepted_reply_id;
-  res.json({ reply: mapReply(r, accepted, req.user.id) });
-});
+    const r = db
+      .prepare(
+        `SELECT r.*,
+                u.email AS author_email,
+                u.display_name AS author_display_name,
+                u.role AS author_role
+         FROM replies r
+         JOIN users u ON u.id = r.author_id
+         WHERE r.id = ?`,
+      )
+      .get(replyId);
+    const accepted = db
+      .prepare('SELECT accepted_reply_id FROM posts WHERE id = ?')
+      .get(postId)?.accepted_reply_id;
+    res.json({ reply: mapReply(r, accepted, req.user.id) });
+  },
+);
 
 app.delete('/api/posts/:postId/replies/:replyId', authRequired, (req, res) => {
   const postId = Number(req.params.postId);
@@ -898,9 +1009,10 @@ app.post(
       db.prepare(
         `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
       ).run(postId);
-      saveMentions({ replyId, body });
+      const mentioned = saveMentions({ replyId, body });
       saveAttachments({ replyId, files: req.files || [] });
-      notifyEveryone({
+      notifyMentions({
+        mentionedUsers: mentioned,
         postId,
         replyId,
         actorId: req.user.id,
@@ -963,7 +1075,7 @@ app.post(
       postId,
       replyId,
       actorId: req.user.id,
-      message: 'Your reply was marked as the accepted solution',
+      message: 'Accepted',
     });
 
     res.json({
@@ -982,8 +1094,128 @@ app.get('/api/attachments/:id', authRequired, (req, res) => {
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File missing on disk' });
   }
+  const inline = String(req.query?.inline || '') === '1';
+  if (inline) {
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${att.original_name.replace(/"/g, '')}"`,
+    );
+    if (att.mime_type) res.type(att.mime_type);
+    return res.sendFile(filePath);
+  }
   res.download(filePath, att.original_name);
 });
+
+app.get('/api/account', authRequired, (req, res) => {
+  const uid = req.user.id;
+  const started = db
+    .prepare(
+      `SELECT p.*,
+              u.email AS author_email,
+              u.display_name AS author_display_name,
+              u.role AS author_role,
+              (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
+       FROM posts p
+       JOIN users u ON u.id = p.author_id
+       WHERE p.author_id = ?
+       ORDER BY p.updated_at DESC`,
+    )
+    .all(uid)
+    .map((row) => mapPost(row, uid));
+
+  const repliedIds = db
+    .prepare(
+      `SELECT DISTINCT post_id FROM replies WHERE author_id = ? ORDER BY post_id DESC`,
+    )
+    .all(uid)
+    .map((r) => r.post_id);
+
+  const participated = [];
+  for (const postId of repliedIds) {
+    const row = loadPostRow(postId);
+    if (!row) continue;
+    if (Number(row.author_id) === Number(uid)) continue;
+    participated.push(mapPost(row, uid));
+  }
+
+  res.json({
+    user: publicUser(
+      db
+        .prepare(
+          'SELECT id, email, role, display_name, created_at FROM users WHERE id = ?',
+        )
+        .get(uid),
+    ),
+    started,
+    participated,
+    stats: {
+      startedCount: started.length,
+      repliedCount: repliedIds.length,
+      participatedCount: participated.length,
+    },
+  });
+});
+
+app.post('/api/account/password', authRequired, (req, res) => {
+  const currentPassword = String(req.body?.currentPassword || '');
+  const newPassword = String(req.body?.newPassword || '');
+  if (!currentPassword || !newPassword) {
+    return res
+      .status(400)
+      .json({ error: 'Current and new password required' });
+  }
+  if (newPassword.length < 6) {
+    return res
+      .status(400)
+      .json({ error: 'Password must be at least 6 characters' });
+  }
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !verifyPassword(currentPassword, user.password_hash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(
+    hashPassword(newPassword),
+    req.user.id,
+  );
+  res.json({ ok: true });
+});
+
+app.patch(
+  '/api/admin/employees/:id/role',
+  authRequired,
+  adminRequired,
+  (req, res) => {
+    const id = Number(req.params.id);
+    const role = String(req.body?.role || '').trim().toLowerCase();
+    if (!['admin', 'employee'].includes(role)) {
+      return res.status(400).json({ error: 'Role must be admin or employee' });
+    }
+    const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    if (!target) return res.status(404).json({ error: 'Account not found' });
+    if (Number(target.id) === Number(req.user.id) && role !== 'admin') {
+      return res
+        .status(400)
+        .json({ error: 'You cannot remove your own admin access' });
+    }
+    if (target.role === 'admin' && role === 'employee') {
+      const adminCount = db
+        .prepare(`SELECT COUNT(*) AS c FROM users WHERE role = 'admin'`)
+        .get().c;
+      if (Number(adminCount) <= 1) {
+        return res
+          .status(400)
+          .json({ error: 'At least one admin must remain' });
+      }
+    }
+    db.prepare(`UPDATE users SET role = ? WHERE id = ?`).run(role, id);
+    const user = db
+      .prepare(
+        'SELECT id, email, role, display_name, created_at FROM users WHERE id = ?',
+      )
+      .get(id);
+    res.json({ employee: publicUser(user) });
+  },
+);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

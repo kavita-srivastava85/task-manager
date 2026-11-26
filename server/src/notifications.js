@@ -32,24 +32,22 @@ export function notifyMentions({
       postId,
       replyId,
       actorId,
-      message: 'You have a new message',
+      // Short label — UI shows a number badge, not full sentences.
+      message: 'Mention',
     });
   }
 }
 
-/** Notify every account (except the sender) about discussion activity. */
+/** @deprecated Prefer notifyMentions — kept for any legacy callers. */
 export function notifyEveryone({ postId, replyId = null, actorId }) {
-  const users = db.prepare(`SELECT id FROM users`).all();
-  for (const user of users) {
-    createNotification({
-      userId: user.id,
-      type: 'reply',
-      postId,
-      replyId,
-      actorId,
-      message: 'You have a new message',
-    });
-  }
+  notifyMentions({
+    mentionedUsers: db.prepare(`SELECT id FROM users`).all().map((u) => ({
+      userId: u.id,
+    })),
+    postId,
+    replyId,
+    actorId,
+  });
 }
 
 export function mapNotification(row) {

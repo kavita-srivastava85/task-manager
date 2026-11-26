@@ -50,11 +50,49 @@ function buildReplyTree(flat) {
   return roots;
 }
 
+function AttachmentEditor({ attachments, removeIds, onToggleRemove, onFiles }) {
+  return (
+    <div className="edit-attachments">
+      {attachments?.length > 0 && (
+        <ul className="edit-attach-list">
+          {attachments.map((a) => {
+            const removing = removeIds.includes(a.id);
+            return (
+              <li key={a.id} className={removing ? 'removing' : ''}>
+                <span>{a.originalName}</span>
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => onToggleRemove(a.id)}
+                >
+                  {removing ? 'Keep' : 'Remove'}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <label className="file-label compact">
+        <span className="file-label-text">
+          <IconPaperclip /> Add attachments
+        </span>
+        <input
+          type="file"
+          multiple
+          onChange={(e) => onFiles(e.target.files)}
+        />
+      </label>
+    </div>
+  );
+}
+
 function ReplyNode({
   reply,
   depth,
   canAccept,
+  canManage,
   currentUserId,
+  isAdmin,
   isClosed,
   users,
   onAccept,
@@ -62,11 +100,12 @@ function ReplyNode({
   onEditReply,
   onDeleteReply,
 }) {
-  const isOwnMessage = Number(reply.author.id) === Number(currentUserId);
   const [showNested, setShowNested] = useState(false);
   const [nestedBody, setNestedBody] = useState('');
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(reply.body);
+  const [removeIds, setRemoveIds] = useState([]);
+  const [editFiles, setEditFiles] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -95,8 +134,18 @@ function ReplyNode({
     setError('');
     setBusy(true);
     try {
-      await onEditReply(reply.id, text);
+      const fd = new FormData();
+      fd.append('body', text);
+      if (removeIds.length) {
+        fd.append('removeAttachmentIds', JSON.stringify(removeIds));
+      }
+      if (editFiles) {
+        for (const f of editFiles) fd.append('files', f);
+      }
+      await onEditReply(reply.id, fd);
       setEditing(false);
+      setRemoveIds([]);
+      setEditFiles(null);
     } catch (err) {
       setError(err.message || 'Could not save');
     } finally {
@@ -153,6 +202,18 @@ function ReplyNode({
               rows={3}
               autoFocus
             />
+            <AttachmentEditor
+              attachments={reply.attachments}
+              removeIds={removeIds}
+              onToggleRemove={(id) =>
+                setRemoveIds((prev) =>
+                  prev.includes(id)
+                    ? prev.filter((x) => x !== id)
+                    : [...prev, id],
+                )
+              }
+              onFiles={setEditFiles}
+            />
             <div className="nested-actions">
               <button
                 type="button"
@@ -170,6 +231,8 @@ function ReplyNode({
                 onClick={() => {
                   setEditing(false);
                   setEditBody(reply.body);
+                  setRemoveIds([]);
+                  setEditFiles(null);
                   setError('');
                 }}
               >
@@ -202,7 +265,7 @@ function ReplyNode({
               <span>Reply</span>
             </button>
           )}
-          {isOwnMessage && !editing && (
+          {canManage && !editing && (
             <>
               {!isClosed && (
                 <button
@@ -210,6 +273,8 @@ function ReplyNode({
                   className="msg-action-btn"
                   onClick={() => {
                     setEditBody(reply.body);
+                    setRemoveIds([]);
+                    setEditFiles(null);
                     setEditing(true);
                     setError('');
                   }}
@@ -241,7 +306,7 @@ function ReplyNode({
               users={users}
               rows={2}
               autoFocus
-              placeholder={`Write a nested reply to ${reply.author.displayName}…`}
+              placeholder={`Reply to ${reply.author.displayName}…`}
               onEnterSubmit={(text) => {
                 void sendNested(text);
               }}
@@ -283,7 +348,11 @@ function ReplyNode({
               reply={child}
               depth={depth + 1}
               canAccept={canAccept}
+              canManage={
+                isAdmin || Number(child.author.id) === Number(currentUserId)
+              }
               currentUserId={currentUserId}
+              isAdmin={isAdmin}
               isClosed={isClosed}
               users={users}
               onAccept={onAccept}
@@ -313,6 +382,8 @@ export default function Thread() {
   const [headingOpen, setHeadingOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(false);
   const [editPostBody, setEditPostBody] = useState('');
+  const [removePostAttIds, setRemovePostAttIds] = useState([]);
+  const [editPostFiles, setEditPostFiles] = useState(null);
 
   async function load() {
     const [{ post: next, replies: replyRows }, { users: directory }] =
@@ -388,7 +459,16 @@ export default function Thread() {
   async function closeChat() {
     try {
       await api.closePost(id);
-      navigate('/discussions', { replace: true });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function reopenChat() {
+    try {
+      await api.reopenPost(id);
+      await load();
     } catch (err) {
       setError(err.message);
     }
@@ -400,8 +480,18 @@ export default function Thread() {
     setBusy(true);
     setError('');
     try {
-      await api.updatePost(id, text);
+      const fd = new FormData();
+      fd.append('body', text);
+      if (removePostAttIds.length) {
+        fd.append('removeAttachmentIds', JSON.stringify(removePostAttIds));
+      }
+      if (editPostFiles) {
+        for (const f of editPostFiles) fd.append('files', f);
+      }
+      await api.updatePost(id, fd);
       setEditingPost(false);
+      setRemovePostAttIds([]);
+      setEditPostFiles(null);
       await load();
     } catch (err) {
       setError(err.message);
@@ -411,7 +501,9 @@ export default function Thread() {
   }
 
   async function deletePost() {
-    if (!window.confirm('Delete this whole discussion?')) return;
+    if (!window.confirm('Delete this whole discussion? Only admins can do this.')) {
+      return;
+    }
     setBusy(true);
     try {
       await api.deletePost(id);
@@ -422,8 +514,8 @@ export default function Thread() {
     }
   }
 
-  async function editReply(replyId, text) {
-    await api.updateReply(id, replyId, text);
+  async function editReply(replyId, formData) {
+    await api.updateReply(id, replyId, formData);
     await load();
   }
 
@@ -436,19 +528,43 @@ export default function Thread() {
   if (!post) return <p className="error">{error || 'Post not found'}</p>;
 
   const isAuthor = Number(user?.id) === Number(post.author.id);
-  const canAccept = user?.role === 'admin' || isAuthor;
+  const isAdmin = user?.role === 'admin';
+  const canManagePost = isAuthor || isAdmin;
+  const canCloseReopen = isAuthor || isAdmin;
+  const canAccept = isAdmin || isAuthor;
   const isClosed = post.status === 'closed';
 
   return (
     <div className="page thread-page">
       <div className="thread-nav">
         <Link to="/discussions" className="back">
-          ← Discussions
+          ← Back
         </Link>
         <div className="thread-nav-actions">
-          {isAuthor && !isClosed && (
+          {canCloseReopen && !isClosed && (
             <button type="button" className="close-chat-btn" onClick={closeChat}>
               Close discussion
+            </button>
+          )}
+          {canCloseReopen && isClosed && (
+            <button
+              type="button"
+              className="reopen-chat-btn"
+              onClick={reopenChat}
+            >
+              Reopen discussion
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              className="msg-action-btn danger"
+              onClick={() => {
+                void deletePost();
+              }}
+              disabled={busy}
+            >
+              <IconTrash size={14} /> Delete discussion
             </button>
           )}
           {isClosed && <span className="closed-pill">Closed</span>}
@@ -465,6 +581,18 @@ export default function Thread() {
               rows={4}
               autoFocus
             />
+            <AttachmentEditor
+              attachments={post.attachments}
+              removeIds={removePostAttIds}
+              onToggleRemove={(attId) =>
+                setRemovePostAttIds((prev) =>
+                  prev.includes(attId)
+                    ? prev.filter((x) => x !== attId)
+                    : [...prev, attId],
+                )
+              }
+              onFiles={setEditPostFiles}
+            />
             <div className="nested-actions">
               <button
                 type="button"
@@ -479,7 +607,11 @@ export default function Thread() {
               <button
                 type="button"
                 className="linkish"
-                onClick={() => setEditingPost(false)}
+                onClick={() => {
+                  setEditingPost(false);
+                  setRemovePostAttIds([]);
+                  setEditPostFiles(null);
+                }}
               >
                 Cancel
               </button>
@@ -514,11 +646,11 @@ export default function Thread() {
         <p className="meta">
           {post.author.displayName} · {formatWhen(post.createdAt)}
         </p>
-        <AttachmentList attachments={post.attachments} />
+        {!editingPost && <AttachmentList attachments={post.attachments} />}
         <MentionChips mentions={post.mentions} />
         <div className="reply-message-actions">
           <ReactionBar postId={post.id} initial={post.reactions} />
-          {isAuthor && !editingPost && (
+          {canManagePost && !editingPost && (
             <>
               {!isClosed && (
                 <button
@@ -526,6 +658,8 @@ export default function Thread() {
                   className="msg-action-btn"
                   onClick={() => {
                     setEditPostBody(post.body);
+                    setRemovePostAttIds([]);
+                    setEditPostFiles(null);
                     setEditingPost(true);
                     setHeadingOpen(true);
                   }}
@@ -533,16 +667,6 @@ export default function Thread() {
                   <IconEdit size={14} /> Edit
                 </button>
               )}
-              <button
-                type="button"
-                className="msg-action-btn danger"
-                onClick={() => {
-                  void deletePost();
-                }}
-                disabled={busy}
-              >
-                <IconTrash size={14} /> Delete
-              </button>
             </>
           )}
         </div>
@@ -563,7 +687,11 @@ export default function Thread() {
               reply={r}
               depth={0}
               canAccept={canAccept}
+              canManage={
+                isAdmin || Number(r.author.id) === Number(user?.id)
+              }
               currentUserId={user?.id}
+              isAdmin={isAdmin}
               isClosed={isClosed}
               users={users}
               onAccept={acceptSolution}
@@ -611,6 +739,12 @@ export default function Thread() {
             </button>
           </form>
         </section>
+      )}
+      {isClosed && (
+        <p className="close-chat-banner">
+          This discussion is closed.
+          {canCloseReopen ? ' You can reopen it above.' : ''}
+        </p>
       )}
     </div>
   );

@@ -13,9 +13,6 @@ export default function ForgotPassword() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (user?.role === 'admin') {
-    return <Navigate to="/admin/employees" replace />;
-  }
   if (user) {
     return <Navigate to="/discussions" replace />;
   }
@@ -26,8 +23,10 @@ export default function ForgotPassword() {
     setBusy(true);
     try {
       const result = await api.forgotPassword(email.trim());
+      const role =
+        result.role === 'admin' ? 'admin' : mode === 'admin' ? 'admin' : 'employee';
       navigate(
-        `/reset-password?token=${encodeURIComponent(result.resetToken)}&mode=${result.role === 'admin' ? 'admin' : mode}`,
+        `/reset-password?token=${encodeURIComponent(result.resetToken)}&mode=${role}`,
         { replace: true },
       );
     } catch (err) {
@@ -38,21 +37,24 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-page compact">
       <div className="auth-panel">
-        <p className="brand-mark">
+        <div className="auth-top-row">
+          <Link
+            to={mode === 'admin' ? '/admin/login' : '/login'}
+            className="back-chip"
+          >
+            ← Back
+          </Link>
+        </div>
+        <p className="brand-mark hero-brand">
           <span className="brand-icon">
-            <IconChat size={18} />
+            <IconChat size={20} />
           </span>
           Discussions App
         </p>
-        <p className="back-row">
-          <Link to={mode === 'admin' ? '/admin/login' : '/employee/login'}>
-            ← Back
-          </Link>
-        </p>
-        <h1>Forgot password</h1>
-        <form onSubmit={onSubmit} className="stack">
+        <p className="auth-subtitle">Reset your password</p>
+        <form onSubmit={onSubmit} className="stack tight">
           <label>
             Email
             <input
@@ -64,7 +66,7 @@ export default function ForgotPassword() {
             />
           </label>
           {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={busy}>
+          <button type="submit" className="btn-compact" disabled={busy}>
             {busy ? 'Checking…' : 'Continue'}
           </button>
         </form>

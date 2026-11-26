@@ -4,7 +4,7 @@ import { useAuth } from '../AuthContext';
 import { api } from '../api';
 import PasswordField from '../PasswordField';
 import { rememberLogin } from '../rememberedLogins';
-import { IconChat, IconShield } from '../icons';
+import { IconChat } from '../icons';
 
 export default function AdminSignup() {
   const { user, loading, acceptSession } = useAuth();
@@ -31,23 +31,20 @@ export default function AdminSignup() {
     };
   }, []);
 
-  if (loading) {
+  if (loading || needsAdminSignup === null) {
     return (
-      <div className="auth-page">
+      <div className="auth-page compact">
         <p className="muted">Loading…</p>
       </div>
     );
   }
 
-  if (user?.role === 'admin') {
-    return <Navigate to="/admin/employees" replace />;
-  }
   if (user) {
     return <Navigate to="/discussions" replace />;
   }
 
   if (needsAdminSignup === false) {
-    return <Navigate to="/admin/login" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   async function onSubmit(e) {
@@ -70,7 +67,7 @@ export default function AdminSignup() {
         role: 'admin',
       });
       acceptSession(result.token, result.user);
-      window.location.assign('/admin/employees');
+      window.location.assign('/discussions');
     } catch (err) {
       setError(err.message || 'Signup failed');
       setBusy(false);
@@ -78,24 +75,21 @@ export default function AdminSignup() {
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-page compact">
       <div className="auth-panel">
-        <p className="brand-mark">
+        <div className="auth-top-row">
+          <Link to="/" className="back-chip">
+            ← Back
+          </Link>
+        </div>
+        <p className="brand-mark hero-brand">
           <span className="brand-icon">
-            <IconChat size={18} />
+            <IconChat size={20} />
           </span>
           Discussions App
         </p>
-        <p className="back-row">
-          <Link to="/admin">← Back</Link>
-        </p>
-        <h1 className="page-title">
-          <span className="title-icon shield">
-            <IconShield size={20} />
-          </span>
-          Admin sign up
-        </h1>
-        <form onSubmit={onSubmit} className="stack">
+        <p className="auth-subtitle">Create the first admin account</p>
+        <form onSubmit={onSubmit} className="stack tight">
           <label>
             Name
             <input
@@ -130,13 +124,10 @@ export default function AdminSignup() {
             autoComplete="new-password"
           />
           {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={busy}>
-            {busy ? 'Creating…' : 'Sign up'}
+          <button type="submit" className="btn-compact" disabled={busy}>
+            {busy ? 'Creating…' : 'Create account'}
           </button>
         </form>
-        <p className="muted switch-link">
-          <Link to="/admin/login">Sign in</Link>
-        </p>
       </div>
     </div>
   );

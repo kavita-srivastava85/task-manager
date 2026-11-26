@@ -47,6 +47,25 @@ export function MentionBody({ text, mentions = [] }) {
 
 export function AttachmentList({ attachments = [] }) {
   if (!attachments.length) return null;
+
+  async function openAttachment(a) {
+    const res = await fetch(api.attachmentUrl(a.id, { inline: true }), {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      // Popup blocked — fall back to download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = a.originalName;
+      link.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
   return (
     <ul className="attachments">
       {attachments.map((a) => (
@@ -54,25 +73,15 @@ export function AttachmentList({ attachments = [] }) {
           <span className="attach-icon">
             <IconPaperclip />
           </span>
-          <a
-            href={api.attachmentUrl(a.id)}
-            onClick={async (e) => {
-              e.preventDefault();
-              const res = await fetch(api.attachmentUrl(a.id), {
-                headers: { Authorization: `Bearer ${getToken()}` },
-              });
-              if (!res.ok) return;
-              const blob = await res.blob();
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = a.originalName;
-              link.click();
-              URL.revokeObjectURL(url);
+          <button
+            type="button"
+            className="attach-open-btn"
+            onClick={() => {
+              void openAttachment(a);
             }}
           >
             {a.originalName}
-          </a>
+          </button>
           <span className="muted">
             {' '}
             ({Math.max(1, Math.round(a.size / 1024))} KB)
@@ -93,32 +102,30 @@ export function MentionChips({ mentions = [] }) {
 }
 
 export function Shell({ user, onLogout, children }) {
+  const isAdmin = user?.role === 'admin';
   return (
     <div className="shell">
       <header className="topbar">
-        <Link to="/discussions" className="brand">
+        <span className="brand brand-static">
           <span className="brand-icon">
             <IconChat size={18} />
           </span>
           Discussions App
-        </Link>
-        <nav>
-          <Link to="/discussions" className="nav-link">
-            <IconChat size={16} />
-            Discussions
-          </Link>
-          {user?.role === 'admin' && (
+        </span>
+        <nav className="topbar-nav-right">
+          {isAdmin && (
             <Link to="/admin/employees" className="nav-link">
               <IconUsers size={16} />
-              Employees
+              Team
             </Link>
           )}
+          <Link to="/account" className="nav-link">
+            Account
+          </Link>
         </nav>
         <div className="user-slot">
           <NotificationBell />
-          <span className="muted">
-            {user?.displayName} · {user?.role}
-          </span>
+          <span className="muted user-name">{user?.displayName}</span>
           <button type="button" className="linkish logout-btn" onClick={onLogout}>
             <IconLogout />
             Log out

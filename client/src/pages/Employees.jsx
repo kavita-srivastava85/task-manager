@@ -25,6 +25,7 @@ export default function Employees() {
   const isAdmin = user?.role === 'admin';
 
   const employeeAccounts = employees.filter((e) => e.role === 'employee');
+  const adminAccounts = employees.filter((e) => e.role === 'admin');
 
   useEffect(() => {
     if (!isAdmin) return undefined;
@@ -126,6 +127,25 @@ export default function Employees() {
     }
   }
 
+  async function onToggleRole(emp) {
+    const nextRole = emp.role === 'admin' ? 'employee' : 'admin';
+    const label =
+      nextRole === 'admin'
+        ? `Make ${emp.displayName} an admin?`
+        : `Remove admin access from ${emp.displayName}?`;
+    if (!window.confirm(label)) return;
+    setError('');
+    setBusy(true);
+    try {
+      await api.setEmployeeRole(emp.id, nextRole);
+      await refreshEmployees();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function copyCredentials() {
     if (!createdCred) return;
     const text = `Discussions App login\nEmail: ${createdCred.email}\nPassword: ${createdCred.password}`;
@@ -144,11 +164,11 @@ export default function Employees() {
           <span className="title-icon users">
             <IconUsers size={22} />
           </span>
-          Employees
+          Team
         </h1>
         <p className="muted">
-          Create employee logins, or delete an account and recreate it with a
-          new password.
+          Create logins, promote or remove admins, and delete accounts so you
+          can recreate them with a new password.
         </p>
       </section>
 
@@ -234,30 +254,49 @@ export default function Employees() {
           )}
         </div>
         {loading && <p className="muted">Loading…</p>}
-        {!loading && employeeAccounts.length === 0 && (
-          <p className="muted">No employees yet. Create one above.</p>
+        {!loading && employees.length === 0 && (
+          <p className="muted">No accounts yet.</p>
         )}
         <ul className="employee-list">
-          {employeeAccounts.map((emp) => (
-            <li key={emp.id} className="employee-row">
-              <div className="employee-meta">
-                <strong>{emp.displayName}</strong>
-                <span className="muted">
-                  {' '}
-                  · {emp.email} · {formatWhen(emp.createdAt)}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="btn-danger-outline compact"
-                disabled={busy || deletingId != null}
-                onClick={() => onDeleteOne(emp)}
-              >
-                <IconTrash size={14} />
-                {deletingId === emp.id ? 'Deleting…' : 'Delete'}
-              </button>
-            </li>
-          ))}
+          {[...adminAccounts, ...employeeAccounts].map((emp) => {
+            const isSelf = Number(emp.id) === Number(user?.id);
+            return (
+              <li key={emp.id} className="employee-row">
+                <div className="employee-meta">
+                  <strong>{emp.displayName}</strong>
+                  <span className="muted">
+                    {' '}
+                    · {emp.email}
+                    {emp.role === 'admin' ? ' · Admin' : ''} ·{' '}
+                    {formatWhen(emp.createdAt)}
+                  </span>
+                </div>
+                <div className="employee-actions">
+                  {!isSelf && (
+                    <button
+                      type="button"
+                      className="btn-role-outline compact"
+                      disabled={busy || deletingId != null}
+                      onClick={() => onToggleRole(emp)}
+                    >
+                      {emp.role === 'admin' ? 'Remove admin' : 'Make admin'}
+                    </button>
+                  )}
+                  {emp.role === 'employee' && (
+                    <button
+                      type="button"
+                      className="btn-danger-outline compact"
+                      disabled={busy || deletingId != null}
+                      onClick={() => onDeleteOne(emp)}
+                    >
+                      <IconTrash size={14} />
+                      {deletingId === emp.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
     </div>

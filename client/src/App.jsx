@@ -10,12 +10,13 @@ import ResetPassword from './pages/ResetPassword';
 import Feed from './pages/Feed';
 import Thread from './pages/Thread';
 import Employees from './pages/Employees';
+import Account from './pages/Account';
 
 function Protected({ children, adminOnly = false }) {
   const { user, loading, logout } = useAuth();
   if (loading) {
     return (
-      <div className="auth-page">
+      <div className="auth-page compact">
         <p className="muted">Loading…</p>
       </div>
     );
@@ -40,10 +41,10 @@ export default function App() {
           <Route path="/admin" element={<AdminHome />} />
           <Route path="/admin/signup" element={<AdminSignup />} />
           <Route path="/admin/login" element={<Login mode="admin" />} />
-          <Route path="/employee/login" element={<Login mode="employee" />} />
+          <Route path="/employee/login" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login mode="any" />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/login" element={<Navigate to="/employee/login" replace />} />
           <Route
             path="/discussions"
             element={
@@ -58,6 +59,14 @@ export default function App() {
             element={
               <Protected>
                 <Thread />
+              </Protected>
+            }
+          />
+          <Route
+            path="/account"
+            element={
+              <Protected>
+                <Account />
               </Protected>
             }
           />
