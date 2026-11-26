@@ -1,9 +1,9 @@
 :root {
-  --bg: #eef8f6;
-  --ink: #12323a;
-  --muted: #4d6b74;
-  --panel: rgba(255, 255, 255, 0.92);
-  --line: #cfe7e2;
+  --bg: #c8d9d6;
+  --ink: #0b2a30;
+  --muted: #3a565e;
+  --panel: rgba(236, 245, 243, 0.94);
+  --line: #9fc4bc;
   --accent: #0d9488;
   --accent-deep: #0f766e;
   --accent-2: #f97316;
@@ -11,7 +11,7 @@
   --accent-ink: #ffffff;
   --danger: #dc2626;
   --ok: #059669;
-  --shadow: 0 14px 34px rgba(15, 118, 110, 0.12);
+  --shadow: 0 14px 34px rgba(8, 60, 55, 0.2);
   --radius: 16px;
   --font: 'Manrope', system-ui, sans-serif;
 }
@@ -25,13 +25,14 @@ body {
   font-family: var(--font);
   background-color: var(--bg);
   background-image:
-    radial-gradient(ellipse 90% 55% at 8% -5%, rgba(45, 212, 191, 0.38), transparent 58%),
-    radial-gradient(ellipse 75% 50% at 95% 5%, rgba(251, 146, 60, 0.28), transparent 52%),
-    radial-gradient(ellipse 60% 40% at 70% 90%, rgba(56, 189, 248, 0.22), transparent 55%),
-    radial-gradient(ellipse 45% 35% at 15% 85%, rgba(250, 204, 21, 0.16), transparent 50%),
-    linear-gradient(rgba(13, 148, 136, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(13, 148, 136, 0.06) 1px, transparent 1px);
-  background-size: auto, auto, auto, auto, 32px 32px, 32px 32px;
+    radial-gradient(ellipse 90% 55% at 8% -5%, rgba(13, 148, 136, 0.28), transparent 58%),
+    radial-gradient(ellipse 75% 50% at 95% 5%, rgba(234, 88, 12, 0.2), transparent 52%),
+    radial-gradient(ellipse 60% 40% at 70% 90%, rgba(2, 132, 199, 0.2), transparent 55%),
+    radial-gradient(ellipse 45% 35% at 15% 85%, rgba(15, 118, 110, 0.18), transparent 50%),
+    linear-gradient(180deg, #9eb8b3 0%, #b7ccc8 40%, #c8d9d6 100%),
+    linear-gradient(rgba(8, 60, 55, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(8, 60, 55, 0.08) 1px, transparent 1px);
+  background-size: auto, auto, auto, auto, auto, 32px 32px, 32px 32px;
   background-attachment: fixed;
   line-height: 1.5;
 }
@@ -499,6 +500,36 @@ textarea { resize: vertical; }
   border: 1px solid #5eead4;
 }
 .profile-page { max-width: 680px; }
+.password-dd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  position: relative;
+  min-height: 1.8rem;
+}
+.password-mask {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.08em;
+}
+.profile-eye {
+  position: static !important;
+  transform: none !important;
+  width: 2rem;
+  height: 2rem;
+  color: #0f766e;
+}
+.profile-eye:hover {
+  transform: none !important;
+  background: rgba(13, 148, 136, 0.14);
+}
+.profile-pwd-hint {
+  font-size: 0.82rem;
+  margin: 0;
+}
+.account-card {
+  background: rgba(232, 242, 239, 0.96) !important;
+  border-color: #8fbbb2 !important;
+}
 .profile-hero {
   display: flex;
   gap: 1rem;
