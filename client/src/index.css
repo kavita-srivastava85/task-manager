@@ -265,7 +265,10 @@ textarea { resize: vertical; }
   position: relative;
   justify-content: center;
   margin-bottom: 0.55rem !important;
-  font-size: 1.75rem !important;
+  font-family: 'Sora', 'Manrope', sans-serif !important;
+  font-size: clamp(1.7rem, 5vw, 2.05rem) !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.03em;
 }
 .brand-icon-lg {
   width: 2.15rem !important;
@@ -275,18 +278,27 @@ textarea { resize: vertical; }
 .welcome-tagline.italic-appeal {
   position: relative;
   margin: 0 auto 1.25rem;
-  max-width: 16rem;
+  max-width: none;
+  width: max-content;
+  max-width: 100%;
+  white-space: nowrap;
+  font-family: 'Fraunces', Georgia, serif;
   font-style: italic;
-  font-weight: 650;
-  font-size: 1.08rem;
-  line-height: 1.45;
+  font-weight: 600;
+  font-size: clamp(0.95rem, 3.4vw, 1.2rem);
+  line-height: 1.35;
   letter-spacing: 0.01em;
-  color: #0f5c63;
   background: linear-gradient(115deg, #0f766e 0%, #0284c7 55%, #ea580c 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   animation: tagline-soft 2.4s ease-in-out infinite alternate;
+}
+@media (max-width: 380px) {
+  .welcome-tagline.italic-appeal {
+    white-space: normal;
+    text-wrap: balance;
+  }
 }
 @keyframes tagline-soft {
   from { opacity: 0.86; transform: translateY(0); }
