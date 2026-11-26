@@ -623,7 +623,10 @@ app.post('/api/posts', authRequired, upload.array('files', 5), (req, res) => {
   if (!body) {
     return res.status(400).json({ error: 'Message required' });
   }
-  const title = titleFromBody(body);
+  const topic = String(req.body?.title || req.body?.topic || '')
+    .trim()
+    .slice(0, 120);
+  const title = topic || titleFromBody(body);
 
   const create = db.transaction(() => {
     const result = db
@@ -796,7 +799,8 @@ app.patch(
     }
     const body = String(req.body?.body || '').trim();
     if (!body) return res.status(400).json({ error: 'Message required' });
-    const title = titleFromBody(body);
+    const topic = String(req.body?.title || req.body?.topic || '').trim();
+    const title = topic || titleFromBody(body);
     const removeIds = parseRemoveAttachmentIds(req.body?.removeAttachmentIds);
 
     db.transaction(() => {
@@ -813,11 +817,16 @@ app.patch(
   },
 );
 
-app.delete('/api/posts/:id', authRequired, adminRequired, (req, res) => {
+app.delete('/api/posts/:id', authRequired, (req, res) => {
   const id = Number(req.params.id);
   const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
-  // Whole-discussion delete is admin-only
+  // Author can delete their own discussion; admin can delete any
+  if (!canModifyContent(req.user, post.author_id)) {
+    return res
+      .status(403)
+      .json({ error: 'Not allowed to delete this discussion' });
+  }
   const atts = db
     .prepare(`SELECT stored_name FROM attachments WHERE post_id = ?`)
     .all(id);

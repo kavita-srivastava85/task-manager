@@ -164,11 +164,11 @@ export default function Employees() {
           <span className="title-icon users">
             <IconUsers size={22} />
           </span>
-          Team
+          Admin
         </h1>
         <p className="muted">
-          Create logins, promote or remove admins, and delete accounts so you
-          can recreate them with a new password.
+          Create employee logins, make or remove admins, and delete accounts to
+          recreate them with a new password.
         </p>
       </section>
 

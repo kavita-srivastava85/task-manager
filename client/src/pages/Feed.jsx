@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { formatWhen } from '../components';
-import { IconChat, IconPaperclip, IconPlus, IconSend } from '../icons';
+import { IconChat, IconPaperclip, IconPlus, IconSend, IconSpark } from '../icons';
 import MentionTextarea from '../MentionTextarea';
+
+const PREVIEW_COUNT = 3;
 
 function ChatRow({ post }) {
   return (
@@ -19,10 +21,25 @@ function ChatRow({ post }) {
   );
 }
 
+function SideList({ items, emptyLabel, expanded }) {
+  const visible = expanded ? items : items.slice(0, PREVIEW_COUNT);
+  return (
+    <>
+      {items.length === 0 && <p className="muted side-empty">{emptyLabel}</p>}
+      <ul className={`side-chat-list${expanded ? ' expanded' : ''}`}>
+        {visible.map((post) => (
+          <ChatRow key={post.id} post={post} />
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export default function Feed() {
   const { user } = useAuth();
   const [posts, setPosts] = useState([]);
   const [users, setUsers] = useState([]);
+  const [topic, setTopic] = useState('');
   const [body, setBody] = useState('');
   const [files, setFiles] = useState(null);
   const [error, setError] = useState('');
@@ -32,13 +49,13 @@ export default function Feed() {
   const [mobileTab, setMobileTab] = useState('recent');
   const [search, setSearch] = useState('');
   const [searchBusy, setSearchBusy] = useState(false);
+  const [openExpanded, setOpenExpanded] = useState(false);
+  const [closedExpanded, setClosedExpanded] = useState(false);
 
   async function load(q = '') {
     const query = String(q || '').trim();
     const [{ posts: next }, { users: directory }] = await Promise.all([
-      query
-        ? api.listPosts({ q: query, mine: true })
-        : api.listPosts(),
+      query ? api.listPosts({ q: query, mine: true }) : api.listPosts(),
       api.listUsers(),
     ]);
     setPosts(next);
@@ -62,7 +79,6 @@ export default function Feed() {
   }, []);
 
   useEffect(() => {
-    // Skip initial mount — the first load effect already fetches.
     if (loading) return undefined;
     const q = search.trim();
     const timer = setTimeout(() => {
@@ -95,11 +111,13 @@ export default function Feed() {
     setBusy(true);
     try {
       const fd = new FormData();
+      if (topic.trim()) fd.append('title', topic.trim());
       fd.append('body', body.trim());
       if (files) {
         for (const f of files) fd.append('files', f);
       }
       const { post } = await api.createPost(fd);
+      setTopic('');
       setBody('');
       setFiles(null);
       e.target.reset?.();
@@ -127,11 +145,11 @@ export default function Feed() {
 
   return (
     <div className="chat-layout three-col">
-      <div className="feed-search-bar">
+      <div className="feed-search-bar compact">
         <input
           type="search"
-          className="feed-search-input"
-          placeholder="Search my discussions…"
+          className="feed-search-input compact"
+          placeholder="Search…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search my discussions"
@@ -141,7 +159,7 @@ export default function Feed() {
             Clear
           </button>
         )}
-        {searchBusy && <span className="muted">Searching…</span>}
+        {searchBusy && <span className="muted">…</span>}
       </div>
 
       <div className="mobile-feed-tabs" role="tablist" aria-label="Discussions">
@@ -181,28 +199,40 @@ export default function Feed() {
           <IconChat size={16} /> Open
         </h2>
         {loading && <p className="muted">Loading…</p>}
-        {!loading && allOpen.length === 0 && (
-          <p className="muted side-empty">
-            {isSearching ? 'No matches' : 'No open discussions'}
-          </p>
+        {!loading && (
+          <SideList
+            items={allOpen}
+            emptyLabel={isSearching ? 'No matches' : 'No open discussions'}
+            expanded={openExpanded}
+          />
         )}
-        <ul className="side-chat-list">
-          {allOpen.map((post) => (
-            <ChatRow key={post.id} post={post} />
-          ))}
-        </ul>
+        {!loading && allOpen.length > PREVIEW_COUNT && (
+          <button
+            type="button"
+            className="linkish view-more-btn"
+            onClick={() => setOpenExpanded((v) => !v)}
+          >
+            {openExpanded ? 'View less' : 'View more'}
+          </button>
+        )}
 
         <h2 className="side-heading closed">Closed</h2>
-        {!loading && allClosed.length === 0 && (
-          <p className="muted side-empty">
-            {isSearching ? 'No matches' : 'No closed discussions'}
-          </p>
+        {!loading && (
+          <SideList
+            items={allClosed}
+            emptyLabel={isSearching ? 'No matches' : 'No closed discussions'}
+            expanded={closedExpanded}
+          />
         )}
-        <ul className="side-chat-list">
-          {allClosed.map((post) => (
-            <ChatRow key={post.id} post={post} />
-          ))}
-        </ul>
+        {!loading && allClosed.length > PREVIEW_COUNT && (
+          <button
+            type="button"
+            className="linkish view-more-btn"
+            onClick={() => setClosedExpanded((v) => !v)}
+          >
+            {closedExpanded ? 'View less' : 'View more'}
+          </button>
+        )}
       </aside>
 
       <section
@@ -210,29 +240,36 @@ export default function Feed() {
       >
         <button
           type="button"
-          className="new-chat-plus"
-          aria-label="New discussion"
+          className="start-discussion-btn"
           onClick={() => setShowComposer((v) => !v)}
         >
-          <IconPlus size={28} />
+          <span>Start a discussion</span>
+          <span className="start-discussion-icons" aria-hidden="true">
+            <IconSpark size={18} />
+            <IconPlus size={18} />
+          </span>
         </button>
 
         {showComposer && (
           <form onSubmit={onCreate} className="stack composer center-composer">
-            <h2 className="section-title">
-              <span className="title-icon plus">
-                <IconPlus size={18} />
-              </span>
-              New discussion
-            </h2>
             <label>
-              Message
+              Topic
+              <input
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="Short topic"
+                maxLength={120}
+              />
+            </label>
+            <label>
+              Discussion
               <MentionTextarea
                 value={body}
                 onChange={setBody}
                 users={users}
                 required
                 rows={4}
+                placeholder="Write the full discussion…"
               />
             </label>
             <label className="file-label">

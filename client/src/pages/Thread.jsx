@@ -32,6 +32,12 @@ function firstFiveWords(text) {
   };
 }
 
+function previewText(text, max = 90) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max)}…`;
+}
+
 function buildReplyTree(flat) {
   const byId = new Map();
   const roots = [];
@@ -100,6 +106,7 @@ function ReplyNode({
   onEditReply,
   onDeleteReply,
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [showNested, setShowNested] = useState(false);
   const [nestedBody, setNestedBody] = useState('');
   const [editing, setEditing] = useState(false);
@@ -168,175 +175,194 @@ function ReplyNode({
   return (
     <li className={`reply-node${reply.isAccepted ? ' accepted-reply' : ''}`}>
       <div
-        className="reply-card"
+        className={`reply-card${expanded || editing ? ' is-open' : ' is-collapsed'}`}
         style={{ marginLeft: depth ? `${Math.min(depth, 5) * 1.15}rem` : 0 }}
       >
-        <div className="reply-top">
-          <p className="meta">
+        <button
+          type="button"
+          className="reply-collapse-toggle"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          <span className="meta">
             {reply.author.displayName} · {formatWhen(reply.createdAt)}
             {reply.isAccepted && (
               <span className="accepted-badge">
-                <IconCheck /> Accepted solution
+                <IconCheck /> Accepted
               </span>
             )}
-          </p>
-          <div className="reply-actions">
-            {canAccept && !reply.isAccepted && !isClosed && (
-              <button
-                type="button"
-                className="accept-btn"
-                onClick={() => onAccept(reply.id)}
-              >
-                <IconCheck /> Accept
-              </button>
-            )}
-          </div>
-        </div>
-
-        {editing ? (
-          <div className="edit-composer">
-            <MentionTextarea
-              value={editBody}
-              onChange={setEditBody}
-              users={users}
-              rows={3}
-              autoFocus
-            />
-            <AttachmentEditor
-              attachments={reply.attachments}
-              removeIds={removeIds}
-              onToggleRemove={(id) =>
-                setRemoveIds((prev) =>
-                  prev.includes(id)
-                    ? prev.filter((x) => x !== id)
-                    : [...prev, id],
-                )
-              }
-              onFiles={setEditFiles}
-            />
-            <div className="nested-actions">
-              <button
-                type="button"
-                className="nested-send-btn btn-with-icon"
-                disabled={busy || !editBody.trim()}
-                onClick={() => {
-                  void saveEdit();
-                }}
-              >
-                {busy ? 'Saving…' : 'Save'}
-              </button>
-              <button
-                type="button"
-                className="linkish"
-                onClick={() => {
-                  setEditing(false);
-                  setEditBody(reply.body);
-                  setRemoveIds([]);
-                  setEditFiles(null);
-                  setError('');
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <MentionBody text={reply.body} mentions={reply.mentions} />
-            <AttachmentList attachments={reply.attachments} />
-            <MentionChips mentions={reply.mentions} />
-          </>
-        )}
-
-        <div className="reply-message-actions">
-          <ReactionBar replyId={reply.id} initial={reply.reactions} />
-          {!isClosed && (
-            <button
-              type="button"
-              className="nested-reply-icon"
-              aria-label="Reply"
-              title="Reply"
-              onClick={() => {
-                setShowNested((v) => !v);
-                setError('');
-              }}
-            >
-              <IconReply size={16} />
-              <span>Reply</span>
-            </button>
+          </span>
+          {!expanded && !editing && (
+            <span className="reply-preview">{previewText(reply.body)}</span>
           )}
-          {canManage && !editing && (
-            <>
+          <span className="muted reply-expand-hint">
+            {expanded ? 'Show less' : 'Open reply'}
+          </span>
+        </button>
+
+        {(expanded || editing) && (
+          <>
+            <div className="reply-top">
+              <div className="reply-actions">
+                {canAccept && !reply.isAccepted && !isClosed && (
+                  <button
+                    type="button"
+                    className="accept-btn"
+                    onClick={() => onAccept(reply.id)}
+                  >
+                    <IconCheck /> Accept
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {editing ? (
+              <div className="edit-composer">
+                <MentionTextarea
+                  value={editBody}
+                  onChange={setEditBody}
+                  users={users}
+                  rows={3}
+                  autoFocus
+                />
+                <AttachmentEditor
+                  attachments={reply.attachments}
+                  removeIds={removeIds}
+                  onToggleRemove={(id) =>
+                    setRemoveIds((prev) =>
+                      prev.includes(id)
+                        ? prev.filter((x) => x !== id)
+                        : [...prev, id],
+                    )
+                  }
+                  onFiles={setEditFiles}
+                />
+                <div className="nested-actions">
+                  <button
+                    type="button"
+                    className="nested-send-btn btn-with-icon"
+                    disabled={busy || !editBody.trim()}
+                    onClick={() => {
+                      void saveEdit();
+                    }}
+                  >
+                    {busy ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={() => {
+                      setEditing(false);
+                      setEditBody(reply.body);
+                      setRemoveIds([]);
+                      setEditFiles(null);
+                      setError('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <MentionBody text={reply.body} mentions={reply.mentions} />
+                <AttachmentList attachments={reply.attachments} />
+                <MentionChips mentions={reply.mentions} />
+              </>
+            )}
+
+            <div className="reply-message-actions">
+              <ReactionBar replyId={reply.id} initial={reply.reactions} />
               {!isClosed && (
                 <button
                   type="button"
-                  className="msg-action-btn"
+                  className="nested-reply-icon"
+                  aria-label="Reply"
+                  title="Reply"
                   onClick={() => {
-                    setEditBody(reply.body);
-                    setRemoveIds([]);
-                    setEditFiles(null);
-                    setEditing(true);
+                    setShowNested((v) => !v);
                     setError('');
                   }}
                 >
-                  <IconEdit size={14} /> Edit
+                  <IconReply size={16} />
+                  <span>Reply</span>
                 </button>
               )}
-              <button
-                type="button"
-                className="msg-action-btn danger"
-                onClick={() => {
-                  void remove();
-                }}
-                disabled={busy}
-              >
-                <IconTrash size={14} /> Delete
-              </button>
-            </>
-          )}
-        </div>
-
-        {error && <p className="error">{error}</p>}
-
-        {showNested && !isClosed && (
-          <div className="nested-composer">
-            <MentionTextarea
-              value={nestedBody}
-              onChange={setNestedBody}
-              users={users}
-              rows={2}
-              autoFocus
-              placeholder={`Reply to ${reply.author.displayName}…`}
-              onEnterSubmit={(text) => {
-                void sendNested(text);
-              }}
-            />
-            <div className="nested-actions">
-              <button
-                type="button"
-                className="nested-send-btn btn-with-icon"
-                disabled={busy || !nestedBody.trim()}
-                onClick={() => {
-                  void sendNested(nestedBody);
-                }}
-              >
-                <IconSend size={16} />
-                {busy ? 'Sending…' : 'Send'}
-              </button>
-              <span className="muted nested-hint">Press Enter to send</span>
-              <button
-                type="button"
-                className="linkish"
-                onClick={() => {
-                  setShowNested(false);
-                  setNestedBody('');
-                  setError('');
-                }}
-              >
-                Cancel
-              </button>
+              {canManage && !editing && (
+                <>
+                  {!isClosed && (
+                    <button
+                      type="button"
+                      className="msg-action-btn"
+                      onClick={() => {
+                        setEditBody(reply.body);
+                        setRemoveIds([]);
+                        setEditFiles(null);
+                        setEditing(true);
+                        setExpanded(true);
+                        setError('');
+                      }}
+                    >
+                      <IconEdit size={14} /> Edit
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="msg-action-btn danger"
+                    onClick={() => {
+                      void remove();
+                    }}
+                    disabled={busy}
+                  >
+                    <IconTrash size={14} /> Delete
+                  </button>
+                </>
+              )}
             </div>
-          </div>
+
+            {error && <p className="error">{error}</p>}
+
+            {showNested && !isClosed && (
+              <div className="nested-composer">
+                <MentionTextarea
+                  value={nestedBody}
+                  onChange={setNestedBody}
+                  users={users}
+                  rows={2}
+                  autoFocus
+                  placeholder={`Reply to ${reply.author.displayName}…`}
+                  onEnterSubmit={(text) => {
+                    void sendNested(text);
+                  }}
+                />
+                <div className="nested-actions">
+                  <button
+                    type="button"
+                    className="nested-send-btn btn-with-icon"
+                    disabled={busy || !nestedBody.trim()}
+                    onClick={() => {
+                      void sendNested(nestedBody);
+                    }}
+                  >
+                    <IconSend size={16} />
+                    {busy ? 'Sending…' : 'Send'}
+                  </button>
+                  <span className="muted nested-hint">Press Enter to send</span>
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={() => {
+                      setShowNested(false);
+                      setNestedBody('');
+                      setError('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -381,6 +407,7 @@ export default function Thread() {
   const [loading, setLoading] = useState(true);
   const [headingOpen, setHeadingOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(false);
+  const [editTopic, setEditTopic] = useState('');
   const [editPostBody, setEditPostBody] = useState('');
   const [removePostAttIds, setRemovePostAttIds] = useState([]);
   const [editPostFiles, setEditPostFiles] = useState(null);
@@ -481,6 +508,7 @@ export default function Thread() {
     setError('');
     try {
       const fd = new FormData();
+      if (editTopic.trim()) fd.append('title', editTopic.trim());
       fd.append('body', text);
       if (removePostAttIds.length) {
         fd.append('removeAttachmentIds', JSON.stringify(removePostAttIds));
@@ -501,9 +529,7 @@ export default function Thread() {
   }
 
   async function deletePost() {
-    if (!window.confirm('Delete this whole discussion? Only admins can do this.')) {
-      return;
-    }
+    if (!window.confirm('Delete this discussion?')) return;
     setBusy(true);
     try {
       await api.deletePost(id);
@@ -555,25 +581,27 @@ export default function Thread() {
               Reopen discussion
             </button>
           )}
-          {isAdmin && (
-            <button
-              type="button"
-              className="msg-action-btn danger"
-              onClick={() => {
-                void deletePost();
-              }}
-              disabled={busy}
-            >
-              <IconTrash size={14} /> Delete discussion
-            </button>
-          )}
           {isClosed && <span className="closed-pill">Closed</span>}
         </div>
       </div>
 
       <article className="thread-head">
+        {post.title && (
+          <p className="thread-topic">
+            <span className="muted">Topic</span> {post.title}
+          </p>
+        )}
+
         {editingPost ? (
           <div className="edit-composer">
+            <label>
+              Topic
+              <input
+                value={editTopic}
+                onChange={(e) => setEditTopic(e.target.value)}
+                maxLength={120}
+              />
+            </label>
             <MentionTextarea
               value={editPostBody}
               onChange={setEditPostBody}
@@ -648,7 +676,7 @@ export default function Thread() {
         </p>
         {!editingPost && <AttachmentList attachments={post.attachments} />}
         <MentionChips mentions={post.mentions} />
-        <div className="reply-message-actions">
+        <div className="reply-message-actions post-message-actions">
           <ReactionBar postId={post.id} initial={post.reactions} />
           {canManagePost && !editingPost && (
             <>
@@ -657,6 +685,7 @@ export default function Thread() {
                   type="button"
                   className="msg-action-btn"
                   onClick={() => {
+                    setEditTopic(post.title || '');
                     setEditPostBody(post.body);
                     setRemovePostAttIds([]);
                     setEditPostFiles(null);
@@ -667,9 +696,20 @@ export default function Thread() {
                   <IconEdit size={14} /> Edit
                 </button>
               )}
+              <button
+                type="button"
+                className="msg-action-btn danger"
+                onClick={() => {
+                  void deletePost();
+                }}
+                disabled={busy}
+              >
+                <IconTrash size={14} /> Delete
+              </button>
             </>
           )}
         </div>
+        {error && <p className="error">{error}</p>}
       </article>
 
       <section className="replies reply-chain">
@@ -732,7 +772,6 @@ export default function Thread() {
                 onChange={(e) => setFiles(e.target.files)}
               />
             </label>
-            {error && <p className="error">{error}</p>}
             <button type="submit" className="btn-with-icon" disabled={busy}>
               <IconSend size={16} />
               {busy ? 'Sending…' : 'Send reply'}
