@@ -37,25 +37,33 @@ export default function Welcome() {
 
   return (
     <div className="welcome-page compact">
-      <div className="welcome-panel">
-        <p className="brand-mark hero-brand">
-          <span className="brand-icon">
-            <IconChat size={22} />
+      <div className="welcome-panel catchy">
+        <div className="welcome-glow" aria-hidden="true" />
+        <p className="brand-mark hero-brand welcome-brand">
+          <span className="brand-icon brand-icon-lg">
+            <IconChat size={26} />
           </span>
           Discussions App
         </p>
-        <p className="welcome-tagline">Team conversations in one place.</p>
+        <p className="welcome-tagline italic-appeal">
+          Team conversations in one place
+        </p>
         <div className="portal-actions single-col">
           {needsAdminSignup ? (
-            <Link className="portal-card primary" to="/admin/signup">
+            <Link className="portal-card primary welcome-cta" to="/admin/signup">
               <span className="portal-title">Get started</span>
             </Link>
           ) : (
-            <Link className="portal-card primary" to="/login">
+            <Link className="portal-card primary welcome-cta" to="/login">
               <span className="portal-title">Sign in</span>
             </Link>
           )}
         </div>
+        {!needsAdminSignup && (
+          <p className="welcome-forgot">
+            <Link to="/forgot-password">Forgot password?</Link>
+          </p>
+        )}
       </div>
     </div>
   );
