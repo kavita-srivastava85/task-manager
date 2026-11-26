@@ -5,7 +5,8 @@ import { hashPassword } from './auth.js';
 const sharedPassword = process.env.DEFAULT_USER_PASSWORD || 'Laptop@123';
 
 /**
- * Seed known accounts only on an empty database (fresh Render disk).
+ * Seed known accounts only on an empty database.
+ * A fresh SQLite file (Render's temporary disk) and a new Postgres database both qualify.
  * Does not recreate accounts the admin deleted, and does not overwrite passwords.
  */
 const accounts = [
@@ -46,7 +47,7 @@ const accounts = [
   },
 ];
 
-const userCount = db.prepare(`SELECT COUNT(*) AS c FROM users`).get().c;
+const userCount = (await db.prepare(`SELECT COUNT(*) AS c FROM users`).get()).c;
 if (userCount > 0) {
   console.log('Accounts already present; skipping first-boot seed.');
 } else {
@@ -56,10 +57,10 @@ if (userCount > 0) {
      VALUES (?, ?, ?, ?)`,
   );
 
-  db.transaction(() => {
+  await db.transaction(async () => {
     for (const account of accounts) {
       const email = account.email.trim().toLowerCase();
-      insert.run(email, passwordHash, account.role, account.displayName);
+      await insert.run(email, passwordHash, account.role, account.displayName);
     }
   })();
 

@@ -21,27 +21,28 @@ export function signToken(user) {
   );
 }
 
-export function authRequired(req, res, next) {
+export async function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
   }
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = db
-      .prepare(
-        'SELECT id, email, role, display_name, created_at, avatar_path FROM users WHERE id = ?',
-      )
-      .get(payload.sub);
-    if (!user) {
-      return res.status(401).json({ error: 'User no longer exists' });
-    }
-    req.user = user;
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  const user = await db
+    .prepare(
+      'SELECT id, email, role, display_name, created_at, avatar_path FROM users WHERE id = ?',
+    )
+    .get(payload.sub);
+  if (!user) {
+    return res.status(401).json({ error: 'User no longer exists' });
+  }
+  req.user = user;
+  next();
 }
 
 export function adminRequired(req, res, next) {

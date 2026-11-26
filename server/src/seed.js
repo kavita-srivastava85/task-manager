@@ -10,14 +10,14 @@ if (!email || !password) {
   process.exit(1);
 }
 
-const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
 if (existing) {
   console.log(`Admin already exists: ${email}`);
   process.exit(0);
 }
 
 const displayName = email.split('@')[0] || 'admin';
-const result = db
+const result = await db
   .prepare(
     `INSERT INTO users (email, password_hash, role, display_name)
      VALUES (?, ?, 'admin', ?)`,

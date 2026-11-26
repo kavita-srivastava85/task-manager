@@ -27,11 +27,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 4000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 const CLIENT_DIST = path.resolve(__dirname, '../../client/dist');
-const UPLOAD_DIR = path.resolve(
-  __dirname,
-  '..',
-  process.env.UPLOAD_DIR || 'uploads',
-);
+const uploadSetting = process.env.UPLOAD_DIR || 'uploads';
+const UPLOAD_DIR = path.isAbsolute(uploadSetting)
+  ? uploadSetting
+  : process.env.DATA_DIR
+    ? path.resolve(process.env.DATA_DIR, uploadSetting)
+    : path.resolve(__dirname, '..', uploadSetting);
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -49,6 +50,21 @@ const upload = multer({
 });
 
 const app = express();
+// Express 4 does not catch rejected promises from async handlers.
+for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+  const original = app[method].bind(app);
+  app[method] = (route, ...handlers) =>
+    original(
+      route,
+      ...handlers.map((handler) => {
+        if (typeof handler !== 'function' || handler.length >= 4) return handler;
+        return (req, res, next) => {
+          const result = handler(req, res, next);
+          if (result && typeof result.then === 'function') result.catch(next);
+        };
+      }),
+    );
+}
 const corsOrigin =
   CLIENT_ORIGIN === '*'
     ? true
@@ -56,15 +72,15 @@ const corsOrigin =
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
-function listUsersForMentions() {
-  return db
+async function listUsersForMentions() {
+  return await db
     .prepare('SELECT id, email, display_name FROM users ORDER BY email')
     .all();
 }
 
-function attachmentsFor(postId = null, replyId = null) {
+async function attachmentsFor(postId = null, replyId = null) {
   if (postId != null) {
-    return db
+    return await db
       .prepare(
         `SELECT id, original_name AS originalName, mime_type AS mimeType,
                 size, stored_name AS storedName, created_at AS createdAt
@@ -72,7 +88,7 @@ function attachmentsFor(postId = null, replyId = null) {
       )
       .all(postId);
   }
-  return db
+  return await db
     .prepare(
       `SELECT id, original_name AS originalName, mime_type AS mimeType,
               size, stored_name AS storedName, created_at AS createdAt
@@ -81,10 +97,10 @@ function attachmentsFor(postId = null, replyId = null) {
     .all(replyId);
 }
 
-function mentionsFor(postId = null, replyId = null) {
+async function mentionsFor(postId = null, replyId = null) {
   const rows =
     postId != null
-      ? db
+      ? await db
           .prepare(
             `SELECT m.id, u.id AS userId, u.email, u.display_name AS displayName,
                     u.avatar_path AS avatarPath
@@ -92,7 +108,7 @@ function mentionsFor(postId = null, replyId = null) {
              WHERE m.post_id = ?`,
           )
           .all(postId)
-      : db
+      : await db
           .prepare(
             `SELECT m.id, u.id AS userId, u.email, u.display_name AS displayName,
                     u.avatar_path AS avatarPath
@@ -109,15 +125,15 @@ function mentionsFor(postId = null, replyId = null) {
   }));
 }
 
-function saveMentions({ postId = null, replyId = null, body }) {
-  const users = listUsersForMentions();
+async function saveMentions({ postId = null, replyId = null, body }) {
+  const users = await listUsersForMentions();
   const mentioned = parseMentions(body, users);
   const insert = db.prepare(
     `INSERT INTO mentions (post_id, reply_id, mentioned_user_id)
      VALUES (?, ?, ?)`,
   );
   for (const user of mentioned) {
-    insert.run(postId, replyId, user.id);
+    await insert.run(postId, replyId, user.id);
   }
   return mentioned.map((u) => ({
     userId: u.id,
@@ -126,21 +142,22 @@ function saveMentions({ postId = null, replyId = null, body }) {
   }));
 }
 
-function saveAttachments({ postId = null, replyId = null, files = [] }) {
+async function saveAttachments({ postId = null, replyId = null, files = [] }) {
   const insert = db.prepare(
     `INSERT INTO attachments
-      (post_id, reply_id, stored_name, original_name, mime_type, size)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+      (post_id, reply_id, stored_name, original_name, mime_type, size, content)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
   const saved = [];
   for (const file of files) {
-    const info = insert.run(
+    const info = await insert.run(
       postId,
       replyId,
       file.filename,
       file.originalname,
       file.mimetype,
       file.size,
+      fs.readFileSync(file.path),
     );
     saved.push({
       id: info.lastInsertRowid,
@@ -153,10 +170,10 @@ function saveAttachments({ postId = null, replyId = null, files = [] }) {
   return saved;
 }
 
-function reactionsFor(postId = null, replyId = null, viewerId = null) {
+async function reactionsFor(postId = null, replyId = null, viewerId = null) {
   const rows =
     postId != null
-      ? db
+      ? await db
           .prepare(
             `SELECT kind, COUNT(*) AS count,
                     SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS mine
@@ -164,7 +181,7 @@ function reactionsFor(postId = null, replyId = null, viewerId = null) {
              GROUP BY kind`,
           )
           .all(viewerId ?? -1, postId)
-      : db
+      : await db
           .prepare(
             `SELECT kind, COUNT(*) AS count,
                     SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS mine
@@ -198,7 +215,7 @@ function mapAuthor(row) {
   };
 }
 
-function mapReply(r, _acceptedReplyId, viewerId) {
+async function mapReply(r, _acceptedReplyId, viewerId) {
   return {
     id: r.id,
     body: r.body,
@@ -206,13 +223,13 @@ function mapReply(r, _acceptedReplyId, viewerId) {
     parentReplyId: r.parent_reply_id ?? null,
     isAccepted: Number(r.is_accepted || 0) === 1,
     author: mapAuthor(r),
-    attachments: attachmentsFor(null, r.id),
-    mentions: mentionsFor(null, r.id),
-    reactions: reactionsFor(null, r.id, viewerId),
+    attachments: await attachmentsFor(null, r.id),
+    mentions: await mentionsFor(null, r.id),
+    reactions: await reactionsFor(null, r.id, viewerId),
   };
 }
 
-function mapPost(row, viewerId = null) {
+async function mapPost(row, viewerId = null) {
   return {
     id: row.id,
     title: row.title,
@@ -223,18 +240,18 @@ function mapPost(row, viewerId = null) {
     acceptedReplyId: row.accepted_reply_id ?? null,
     author: mapAuthor(row),
     replyCount: row.reply_count ?? 0,
-    attachments: attachmentsFor(row.id, null),
-    mentions: mentionsFor(row.id, null),
-    reactions: reactionsFor(row.id, null, viewerId),
+    attachments: await attachmentsFor(row.id, null),
+    mentions: await mentionsFor(row.id, null),
+    reactions: await reactionsFor(row.id, null, viewerId),
   };
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'discussions-app' });
+  res.json({ ok: true, service: 'discussions-app', storage: db.driver });
 });
 
-app.get('/api/auth/status', (_req, res) => {
-  const row = db
+app.get('/api/auth/status', async (_req, res) => {
+  const row = await db
     .prepare(`SELECT COUNT(*) AS count FROM users WHERE role = 'admin'`)
     .get();
   res.json({
@@ -244,8 +261,8 @@ app.get('/api/auth/status', (_req, res) => {
 });
 
 /** First-time admin creates their own login ID (sign up). */
-app.post('/api/auth/admin/signup', (req, res) => {
-  const existingAdmins = db
+app.post('/api/auth/admin/signup', async (req, res) => {
+  const existingAdmins = await db
     .prepare(`SELECT COUNT(*) AS count FROM users WHERE role = 'admin'`)
     .get();
   if (Number(existingAdmins?.count || 0) > 0) {
@@ -272,13 +289,13 @@ app.post('/api/auth/admin/signup', (req, res) => {
   }
 
   try {
-    const result = db
+    const result = await db
       .prepare(
         `INSERT INTO users (email, password_hash, role, display_name)
          VALUES (?, ?, 'admin', ?)`,
       )
       .run(email, hashPassword(password), displayName);
-    const user = db
+    const user = await db
       .prepare(
         'SELECT id, email, role, display_name, created_at FROM users WHERE id = ?',
       )
@@ -296,7 +313,7 @@ app.post('/api/auth/admin/signup', (req, res) => {
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const email = String(req.body?.email || '')
     .trim()
     .toLowerCase();
@@ -306,7 +323,7 @@ app.post('/api/auth/login', (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password required' });
   }
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (!user || !verifyPassword(password, user.password_hash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
@@ -329,7 +346,7 @@ app.get('/api/auth/me', authRequired, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
-app.post('/api/auth/forgot-password', (req, res) => {
+app.post('/api/auth/forgot-password', async (req, res) => {
   const email = String(req.body?.email || '')
     .trim()
     .toLowerCase();
@@ -337,7 +354,7 @@ app.post('/api/auth/forgot-password', (req, res) => {
     return res.status(400).json({ error: 'Email required' });
   }
 
-  const user = db.prepare('SELECT id, email, role FROM users WHERE email = ?').get(email);
+  const user = await db.prepare('SELECT id, email, role FROM users WHERE email = ?').get(email);
   if (!user) {
     return res.status(404).json({ error: 'No account found with that email' });
   }
@@ -345,12 +362,12 @@ app.post('/api/auth/forgot-password', (req, res) => {
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
-  db.prepare(
+  await db.prepare(
     `UPDATE password_resets SET used_at = datetime('now')
      WHERE user_id = ? AND used_at IS NULL`,
   ).run(user.id);
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO password_resets (user_id, token, expires_at)
      VALUES (?, ?, ?)`,
   ).run(user.id, token, expiresAt);
@@ -363,7 +380,7 @@ app.post('/api/auth/forgot-password', (req, res) => {
   });
 });
 
-app.post('/api/auth/reset-password', (req, res) => {
+app.post('/api/auth/reset-password', async (req, res) => {
   const token = String(req.body?.token || '').trim();
   const password = String(req.body?.password || '');
 
@@ -376,7 +393,7 @@ app.post('/api/auth/reset-password', (req, res) => {
       .json({ error: 'Password must be at least 6 characters' });
   }
 
-  const row = db
+  const row = await db
     .prepare(
       `SELECT pr.*, u.role, u.email
        FROM password_resets pr
@@ -392,16 +409,16 @@ app.post('/api/auth/reset-password', (req, res) => {
     return res.status(400).json({ error: 'Reset link has expired' });
   }
 
-  const update = db.transaction(() => {
-    db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(
+  const update = db.transaction(async () => {
+    await db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(
       hashPassword(password),
       row.user_id,
     );
-    db.prepare(
+    await db.prepare(
       `UPDATE password_resets SET used_at = datetime('now') WHERE id = ?`,
     ).run(row.id);
   });
-  update();
+  await update();
 
   res.json({
     ok: true,
@@ -410,8 +427,8 @@ app.post('/api/auth/reset-password', (req, res) => {
   });
 });
 
-app.get('/api/notifications', authRequired, (req, res) => {
-  const rows = db
+app.get('/api/notifications', authRequired, async (req, res) => {
+  const rows = await db
     .prepare(
       `SELECT n.*,
               a.display_name AS actor_display_name,
@@ -423,7 +440,7 @@ app.get('/api/notifications', authRequired, (req, res) => {
        LIMIT 50`,
     )
     .all(req.user.id);
-  const unreadCount = db
+  const unreadCount = await db
     .prepare(
       `SELECT COUNT(*) AS count FROM notifications
        WHERE user_id = ? AND read_at IS NULL`,
@@ -435,17 +452,17 @@ app.get('/api/notifications', authRequired, (req, res) => {
   });
 });
 
-app.post('/api/notifications/:id/read', authRequired, (req, res) => {
+app.post('/api/notifications/:id/read', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const row = db
+  const row = await db
     .prepare(`SELECT * FROM notifications WHERE id = ? AND user_id = ?`)
     .get(id, req.user.id);
   if (!row) return res.status(404).json({ error: 'Notification not found' });
-  db.prepare(
+  await db.prepare(
     `UPDATE notifications SET read_at = datetime('now')
      WHERE id = ? AND read_at IS NULL`,
   ).run(id);
-  const updated = db
+  const updated = await db
     .prepare(
       `SELECT n.*,
               a.display_name AS actor_display_name,
@@ -458,16 +475,16 @@ app.post('/api/notifications/:id/read', authRequired, (req, res) => {
   res.json({ notification: mapNotification(updated) });
 });
 
-app.post('/api/notifications/read-all', authRequired, (req, res) => {
-  db.prepare(
+app.post('/api/notifications/read-all', authRequired, async (req, res) => {
+  await db.prepare(
     `UPDATE notifications SET read_at = datetime('now')
      WHERE user_id = ? AND read_at IS NULL`,
   ).run(req.user.id);
   res.json({ ok: true });
 });
 
-app.get('/api/admin/employees', authRequired, adminRequired, (_req, res) => {
-  const rows = db
+app.get('/api/admin/employees', authRequired, adminRequired, async (_req, res) => {
+  const rows = await db
     .prepare(
       `SELECT id, email, role, display_name, created_at, avatar_path
        FROM users ORDER BY role DESC, email ASC`,
@@ -476,7 +493,7 @@ app.get('/api/admin/employees', authRequired, adminRequired, (_req, res) => {
   res.json({ employees: rows.map(publicUser) });
 });
 
-app.post('/api/admin/employees', authRequired, adminRequired, (req, res) => {
+app.post('/api/admin/employees', authRequired, adminRequired, async (req, res) => {
   const email = String(req.body?.email || '')
     .trim()
     .toLowerCase();
@@ -493,13 +510,13 @@ app.post('/api/admin/employees', authRequired, adminRequired, (req, res) => {
   }
 
   try {
-    const result = db
+    const result = await db
       .prepare(
         `INSERT INTO users (email, password_hash, role, display_name)
          VALUES (?, ?, 'employee', ?)`,
       )
       .run(email, hashPassword(password), displayName);
-    const user = db
+    const user = await db
       .prepare(
         'SELECT id, email, role, display_name, created_at FROM users WHERE id = ?',
       )
@@ -513,8 +530,8 @@ app.post('/api/admin/employees', authRequired, adminRequired, (req, res) => {
   }
 });
 
-function deleteEmployeeById(employeeId) {
-  const user = db
+async function deleteEmployeeById(employeeId) {
+  const user = await db
     .prepare('SELECT id, role FROM users WHERE id = ?')
     .get(employeeId);
   if (!user) return { error: 'Account not found', status: 404 };
@@ -522,16 +539,16 @@ function deleteEmployeeById(employeeId) {
     return { error: 'Only employee accounts can be deleted', status: 400 };
   }
 
-  db.transaction(() => {
+  await db.transaction(async () => {
     // Clear reply acceptance links before cascading deletes.
-    db.prepare(
+    await db.prepare(
       `UPDATE posts SET accepted_reply_id = NULL
        WHERE accepted_reply_id IN (SELECT id FROM replies WHERE author_id = ?)`,
     ).run(employeeId);
-    db.prepare(
+    await db.prepare(
       `UPDATE posts SET accepted_reply_id = NULL WHERE author_id = ?`,
     ).run(employeeId);
-    db.prepare('DELETE FROM users WHERE id = ?').run(employeeId);
+    await db.prepare('DELETE FROM users WHERE id = ?').run(employeeId);
   })();
 
   return { ok: true };
@@ -541,12 +558,12 @@ app.delete(
   '/api/admin/employees/:id',
   authRequired,
   adminRequired,
-  (req, res) => {
+  async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
       return res.status(400).json({ error: 'Invalid account id' });
     }
-    const result = deleteEmployeeById(id);
+    const result = await deleteEmployeeById(id);
     if (result.error) {
       return res.status(result.status).json({ error: result.error });
     }
@@ -554,22 +571,22 @@ app.delete(
   },
 );
 
-app.delete('/api/admin/employees', authRequired, adminRequired, (_req, res) => {
-  const employees = db
+app.delete('/api/admin/employees', authRequired, adminRequired, async (_req, res) => {
+  const employees = await db
     .prepare(`SELECT id FROM users WHERE role = 'employee'`)
     .all();
   const deletedIds = [];
-  db.transaction(() => {
+  await db.transaction(async () => {
     for (const row of employees) {
-      const result = deleteEmployeeById(row.id);
+      const result = await deleteEmployeeById(row.id);
       if (!result.error) deletedIds.push(row.id);
     }
   })();
   res.json({ ok: true, deletedCount: deletedIds.length, deletedIds });
 });
 
-app.get('/api/users', authRequired, (_req, res) => {
-  const users = db
+app.get('/api/users', authRequired, async (_req, res) => {
+  const users = await db
     .prepare(
       `SELECT id, email, role, display_name, created_at, avatar_path FROM users ORDER BY email`,
     )
@@ -577,14 +594,14 @@ app.get('/api/users', authRequired, (_req, res) => {
   res.json({ users: users.map(publicUser) });
 });
 
-app.get('/api/posts', authRequired, (req, res) => {
+app.get('/api/posts', authRequired, async (req, res) => {
   const q = String(req.query?.q || '')
     .trim()
     .toLowerCase();
   const mine = String(req.query?.mine || '') === '1';
   const uid = req.user.id;
 
-  let rows = db
+  let rows = await db
     .prepare(
       `SELECT p.*,
               u.email AS author_email,
@@ -599,25 +616,30 @@ app.get('/api/posts', authRequired, (req, res) => {
     .all();
 
   if (mine || q) {
-    rows = rows.filter((row) => {
+    const filtered = [];
+    for (const row of rows) {
       const isAuthor = Number(row.author_id) === Number(uid);
       const participated =
         isAuthor ||
         Boolean(
-          db
+          await db
             .prepare(
               `SELECT 1 AS ok FROM replies WHERE post_id = ? AND author_id = ? LIMIT 1`,
             )
             .get(row.id, uid),
         );
-      if ((mine || q) && !participated) return false;
-      if (!q) return true;
+      if ((mine || q) && !participated) continue;
+      if (!q) {
+        filtered.push(row);
+        continue;
+      }
       const hay = `${row.title || ''} ${row.body || ''} ${row.author_display_name || ''}`.toLowerCase();
-      return hay.includes(q);
-    });
+      if (hay.includes(q)) filtered.push(row);
+    }
+    rows = filtered;
   }
 
-  res.json({ posts: rows.map((row) => mapPost(row, req.user.id)) });
+  res.json({ posts: await Promise.all(rows.map(async (row) => await mapPost(row, req.user.id))) });
 });
 
 function titleFromBody(body, maxWords = 5) {
@@ -631,7 +653,7 @@ function titleFromBody(body, maxWords = 5) {
   return `${words.slice(0, maxWords).join(' ')}…`;
 }
 
-app.post('/api/posts', authRequired, upload.array('files', 5), (req, res) => {
+app.post('/api/posts', authRequired, upload.array('files', 5), async (req, res) => {
   const body = String(req.body?.body || '').trim();
   if (!body) {
     return res.status(400).json({ error: 'Message required' });
@@ -641,14 +663,14 @@ app.post('/api/posts', authRequired, upload.array('files', 5), (req, res) => {
     .slice(0, 120);
   const title = topic || titleFromBody(body);
 
-  const create = db.transaction(() => {
-    const result = db
+  const create = db.transaction(async () => {
+    const result = await db
       .prepare(`INSERT INTO posts (author_id, title, body) VALUES (?, ?, ?)`)
       .run(req.user.id, title, body);
     const postId = result.lastInsertRowid;
-    const mentioned = saveMentions({ postId, body });
-    saveAttachments({ postId, files: req.files || [] });
-    notifyMentions({
+    const mentioned = await saveMentions({ postId, body });
+    await saveAttachments({ postId, files: req.files || [] });
+    await notifyMentions({
       mentionedUsers: mentioned,
       postId,
       actorId: req.user.id,
@@ -656,8 +678,8 @@ app.post('/api/posts', authRequired, upload.array('files', 5), (req, res) => {
     return postId;
   });
 
-  const postId = create();
-  const row = db
+  const postId = await create();
+  const row = await db
     .prepare(
       `SELECT p.*,
               u.email AS author_email,
@@ -669,12 +691,12 @@ app.post('/api/posts', authRequired, upload.array('files', 5), (req, res) => {
        WHERE p.id = ?`,
     )
     .get(postId);
-  res.status(201).json({ post: mapPost(row, req.user.id) });
+  res.status(201).json({ post: await mapPost(row, req.user.id) });
 });
 
-app.get('/api/posts/:id', authRequired, (req, res) => {
+app.get('/api/posts/:id', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const row = db
+  const row = await db
     .prepare(
       `SELECT p.*,
               u.email AS author_email,
@@ -689,7 +711,7 @@ app.get('/api/posts/:id', authRequired, (req, res) => {
     .get(id);
   if (!row) return res.status(404).json({ error: 'Post not found' });
 
-  const replies = db
+  const replies = await Promise.all((await db
     .prepare(
       `SELECT r.*,
               u.email AS author_email,
@@ -701,14 +723,14 @@ app.get('/api/posts/:id', authRequired, (req, res) => {
        WHERE r.post_id = ?
        ORDER BY r.created_at ASC`,
     )
-    .all(id)
-    .map((r) => mapReply(r, row.accepted_reply_id, req.user.id));
+    .all(id))
+    .map(async (r) => await mapReply(r, row.accepted_reply_id, req.user.id)));
 
-  res.json({ post: mapPost(row, req.user.id), replies });
+  res.json({ post: await mapPost(row, req.user.id), replies });
 });
 
-function loadPostRow(id) {
-  return db
+async function loadPostRow(id) {
+  return await db
     .prepare(
       `SELECT p.*,
               u.email AS author_email,
@@ -728,34 +750,34 @@ function canCloseOrReopen(reqUser, post) {
   );
 }
 
-app.post('/api/posts/:id/close', authRequired, (req, res) => {
+app.post('/api/posts/:id/close', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
+  const post = await db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
   if (!canCloseOrReopen(req.user, post)) {
     return res.status(403).json({
       error: 'Only the starter or an admin can close this discussion',
     });
   }
-  db.prepare(
+  await db.prepare(
     `UPDATE posts SET status = 'closed', updated_at = datetime('now') WHERE id = ?`,
   ).run(id);
-  res.json({ post: mapPost(loadPostRow(id), req.user.id) });
+  res.json({ post: await mapPost(await loadPostRow(id), req.user.id) });
 });
 
-app.post('/api/posts/:id/reopen', authRequired, (req, res) => {
+app.post('/api/posts/:id/reopen', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
+  const post = await db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
   if (!canCloseOrReopen(req.user, post)) {
     return res.status(403).json({
       error: 'Only the starter or an admin can reopen this discussion',
     });
   }
-  db.prepare(
+  await db.prepare(
     `UPDATE posts SET status = 'open', updated_at = datetime('now') WHERE id = ?`,
   ).run(id);
-  res.json({ post: mapPost(loadPostRow(id), req.user.id) });
+  res.json({ post: await mapPost(await loadPostRow(id), req.user.id) });
 });
 
 function canModifyContent(reqUser, authorId) {
@@ -784,9 +806,9 @@ function parseRemoveAttachmentIds(raw) {
     .filter((n) => Number.isFinite(n));
 }
 
-function removeAttachmentsByIds(ids, { postId = null, replyId = null }) {
+async function removeAttachmentsByIds(ids, { postId = null, replyId = null }) {
   for (const attId of ids) {
-    const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(attId);
+    const att = await db.prepare('SELECT * FROM attachments WHERE id = ?').get(attId);
     if (!att) continue;
     if (postId != null && Number(att.post_id) !== Number(postId)) continue;
     if (replyId != null && Number(att.reply_id) !== Number(replyId)) continue;
@@ -796,7 +818,7 @@ function removeAttachmentsByIds(ids, { postId = null, replyId = null }) {
     } catch {
       // ignore disk cleanup errors
     }
-    db.prepare('DELETE FROM attachments WHERE id = ?').run(attId);
+    await db.prepare('DELETE FROM attachments WHERE id = ?').run(attId);
   }
 }
 
@@ -804,9 +826,9 @@ app.patch(
   '/api/posts/:id',
   authRequired,
   upload.array('files', 5),
-  (req, res) => {
+  async (req, res) => {
     const id = Number(req.params.id);
-    const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
+    const post = await db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
     if (!post) return res.status(404).json({ error: 'Post not found' });
     if (!canModifyContent(req.user, post.author_id)) {
       return res.status(403).json({ error: 'Not allowed to edit this message' });
@@ -820,23 +842,23 @@ app.patch(
     const title = topic || titleFromBody(body);
     const removeIds = parseRemoveAttachmentIds(req.body?.removeAttachmentIds);
 
-    db.transaction(() => {
-      db.prepare(
+    await db.transaction(async () => {
+      await db.prepare(
         `UPDATE posts SET body = ?, title = ?, updated_at = datetime('now') WHERE id = ?`,
       ).run(body, title, id);
-      db.prepare(`DELETE FROM mentions WHERE post_id = ?`).run(id);
-      saveMentions({ postId: id, body });
-      removeAttachmentsByIds(removeIds, { postId: id });
-      saveAttachments({ postId: id, files: req.files || [] });
+      await db.prepare(`DELETE FROM mentions WHERE post_id = ?`).run(id);
+      await saveMentions({ postId: id, body });
+      await removeAttachmentsByIds(removeIds, { postId: id });
+      await saveAttachments({ postId: id, files: req.files || [] });
     })();
 
-    res.json({ post: mapPost(loadPostRow(id), req.user.id) });
+    res.json({ post: await mapPost(await loadPostRow(id), req.user.id) });
   },
 );
 
-app.delete('/api/posts/:id', authRequired, (req, res) => {
+app.delete('/api/posts/:id', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
+  const post = await db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
   // Author can delete their own discussion; admin can delete any
   if (!canModifyContent(req.user, post.author_id)) {
@@ -844,10 +866,10 @@ app.delete('/api/posts/:id', authRequired, (req, res) => {
       .status(403)
       .json({ error: 'Not allowed to delete this discussion' });
   }
-  const atts = db
+  const atts = await db
     .prepare(`SELECT stored_name FROM attachments WHERE post_id = ?`)
     .all(id);
-  const replyAtts = db
+  const replyAtts = await db
     .prepare(
       `SELECT a.stored_name FROM attachments a
        JOIN replies r ON r.id = a.reply_id
@@ -862,7 +884,7 @@ app.delete('/api/posts/:id', authRequired, (req, res) => {
       // ignore
     }
   }
-  db.prepare(`DELETE FROM posts WHERE id = ?`).run(id);
+  await db.prepare(`DELETE FROM posts WHERE id = ?`).run(id);
   res.json({ ok: true });
 });
 
@@ -870,17 +892,17 @@ app.patch(
   '/api/posts/:postId/replies/:replyId',
   authRequired,
   upload.array('files', 5),
-  (req, res) => {
+  async (req, res) => {
     const postId = Number(req.params.postId);
     const replyId = Number(req.params.replyId);
-    const post = db
+    const post = await db
       .prepare('SELECT id, status FROM posts WHERE id = ?')
       .get(postId);
     if (!post) return res.status(404).json({ error: 'Post not found' });
     if ((post.status || 'open') === 'closed') {
       return res.status(400).json({ error: 'This discussion is closed' });
     }
-    const reply = db.prepare('SELECT * FROM replies WHERE id = ?').get(replyId);
+    const reply = await db.prepare('SELECT * FROM replies WHERE id = ?').get(replyId);
     if (!reply || Number(reply.post_id) !== postId) {
       return res.status(404).json({ error: 'Reply not found' });
     }
@@ -891,18 +913,18 @@ app.patch(
     if (!body) return res.status(400).json({ error: 'Message required' });
     const removeIds = parseRemoveAttachmentIds(req.body?.removeAttachmentIds);
 
-    db.transaction(() => {
-      db.prepare(`UPDATE replies SET body = ? WHERE id = ?`).run(body, replyId);
-      db.prepare(`DELETE FROM mentions WHERE reply_id = ?`).run(replyId);
-      saveMentions({ replyId, body });
-      removeAttachmentsByIds(removeIds, { replyId });
-      saveAttachments({ replyId, files: req.files || [] });
-      db.prepare(
+    await db.transaction(async () => {
+      await db.prepare(`UPDATE replies SET body = ? WHERE id = ?`).run(body, replyId);
+      await db.prepare(`DELETE FROM mentions WHERE reply_id = ?`).run(replyId);
+      await saveMentions({ replyId, body });
+      await removeAttachmentsByIds(removeIds, { replyId });
+      await saveAttachments({ replyId, files: req.files || [] });
+      await db.prepare(
         `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
       ).run(postId);
     })();
 
-    const r = db
+    const r = await db
       .prepare(
         `SELECT r.*,
                 u.email AS author_email,
@@ -914,36 +936,36 @@ app.patch(
          WHERE r.id = ?`,
       )
       .get(replyId);
-    const accepted = db
+    const accepted = (await db
       .prepare('SELECT accepted_reply_id FROM posts WHERE id = ?')
-      .get(postId)?.accepted_reply_id;
-    res.json({ reply: mapReply(r, accepted, req.user.id) });
+      .get(postId))?.accepted_reply_id;
+    res.json({ reply: await mapReply(r, accepted, req.user.id) });
   },
 );
 
-app.delete('/api/posts/:postId/replies/:replyId', authRequired, (req, res) => {
+app.delete('/api/posts/:postId/replies/:replyId', authRequired, async (req, res) => {
   const postId = Number(req.params.postId);
   const replyId = Number(req.params.replyId);
-  const reply = db.prepare('SELECT * FROM replies WHERE id = ?').get(replyId);
+  const reply = await db.prepare('SELECT * FROM replies WHERE id = ?').get(replyId);
   if (!reply || Number(reply.post_id) !== postId) {
     return res.status(404).json({ error: 'Reply not found' });
   }
   if (!canModifyContent(req.user, reply.author_id)) {
     return res.status(403).json({ error: 'Not allowed to delete this message' });
   }
-  db.transaction(() => {
-    db.prepare(
+  await db.transaction(async () => {
+    await db.prepare(
       `UPDATE posts SET accepted_reply_id = NULL WHERE id = ? AND accepted_reply_id = ?`,
     ).run(postId, replyId);
-    db.prepare(`DELETE FROM replies WHERE id = ?`).run(replyId);
-    db.prepare(
+    await db.prepare(`DELETE FROM replies WHERE id = ?`).run(replyId);
+    await db.prepare(
       `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
     ).run(postId);
   })();
   res.json({ ok: true });
 });
 
-app.post('/api/reactions', authRequired, (req, res) => {
+app.post('/api/reactions', authRequired, async (req, res) => {
   const kind = String(req.body?.kind || '').trim();
   const postId = req.body?.postId != null ? Number(req.body.postId) : null;
   const replyId = req.body?.replyId != null ? Number(req.body.replyId) : null;
@@ -959,47 +981,47 @@ app.post('/api/reactions', authRequired, (req, res) => {
   }
 
   if (postId != null) {
-    const post = db.prepare('SELECT id FROM posts WHERE id = ?').get(postId);
+    const post = await db.prepare('SELECT id FROM posts WHERE id = ?').get(postId);
     if (!post) return res.status(404).json({ error: 'Post not found' });
-    const existing = db
+    const existing = await db
       .prepare(
         `SELECT id FROM reactions WHERE user_id = ? AND post_id = ? AND kind = ?`,
       )
       .get(req.user.id, postId, kind);
     if (existing) {
-      db.prepare(`DELETE FROM reactions WHERE id = ?`).run(existing.id);
+      await db.prepare(`DELETE FROM reactions WHERE id = ?`).run(existing.id);
     } else {
-      db.prepare(
+      await db.prepare(
         `INSERT INTO reactions (user_id, post_id, kind) VALUES (?, ?, ?)`,
       ).run(req.user.id, postId, kind);
     }
-    return res.json({ reactions: reactionsFor(postId, null, req.user.id) });
+    return res.json({ reactions: await reactionsFor(postId, null, req.user.id) });
   }
 
-  const reply = db.prepare('SELECT id FROM replies WHERE id = ?').get(replyId);
+  const reply = await db.prepare('SELECT id FROM replies WHERE id = ?').get(replyId);
   if (!reply) return res.status(404).json({ error: 'Reply not found' });
-  const existing = db
+  const existing = await db
     .prepare(
       `SELECT id FROM reactions WHERE user_id = ? AND reply_id = ? AND kind = ?`,
     )
     .get(req.user.id, replyId, kind);
   if (existing) {
-    db.prepare(`DELETE FROM reactions WHERE id = ?`).run(existing.id);
+    await db.prepare(`DELETE FROM reactions WHERE id = ?`).run(existing.id);
   } else {
-    db.prepare(
+    await db.prepare(
       `INSERT INTO reactions (user_id, reply_id, kind) VALUES (?, ?, ?)`,
     ).run(req.user.id, replyId, kind);
   }
-  res.json({ reactions: reactionsFor(null, replyId, req.user.id) });
+  res.json({ reactions: await reactionsFor(null, replyId, req.user.id) });
 });
 
 app.post(
   '/api/posts/:id/replies',
   authRequired,
   upload.array('files', 5),
-  (req, res) => {
+  async (req, res) => {
     const postId = Number(req.params.id);
-    const post = db
+    const post = await db
       .prepare('SELECT id, title, author_id, status FROM posts WHERE id = ?')
       .get(postId);
     if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -1015,7 +1037,7 @@ app.post(
         ? Number(req.body.parentReplyId)
         : null;
     if (parentReplyId != null) {
-      const parent = db
+      const parent = await db
         .prepare('SELECT id, post_id FROM replies WHERE id = ?')
         .get(parentReplyId);
       if (!parent || Number(parent.post_id) !== postId) {
@@ -1025,20 +1047,20 @@ app.post(
       parentReplyId = null;
     }
 
-    const create = db.transaction(() => {
-      const result = db
+    const create = db.transaction(async () => {
+      const result = await db
         .prepare(
           `INSERT INTO replies (post_id, author_id, body, parent_reply_id)
            VALUES (?, ?, ?, ?)`,
         )
         .run(postId, req.user.id, body, parentReplyId);
       const replyId = result.lastInsertRowid;
-      db.prepare(
+      await db.prepare(
         `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
       ).run(postId);
-      const mentioned = saveMentions({ replyId, body });
-      saveAttachments({ replyId, files: req.files || [] });
-      notifyMentions({
+      const mentioned = await saveMentions({ replyId, body });
+      await saveAttachments({ replyId, files: req.files || [] });
+      await notifyMentions({
         mentionedUsers: mentioned,
         postId,
         replyId,
@@ -1047,8 +1069,8 @@ app.post(
       return replyId;
     });
 
-    const replyId = create();
-    const r = db
+    const replyId = await create();
+    const r = await db
       .prepare(
         `SELECT r.*,
                 u.email AS author_email,
@@ -1062,7 +1084,7 @@ app.post(
       .get(replyId);
 
     res.status(201).json({
-      reply: mapReply(r, null, req.user.id),
+      reply: await mapReply(r, null, req.user.id),
     });
   },
 );
@@ -1070,10 +1092,10 @@ app.post(
 app.post(
   '/api/posts/:postId/replies/:replyId/accept',
   authRequired,
-  (req, res) => {
+  async (req, res) => {
     const postId = Number(req.params.postId);
     const replyId = Number(req.params.replyId);
-    const post = db
+    const post = await db
       .prepare('SELECT id, title, author_id, accepted_reply_id FROM posts WHERE id = ?')
       .get(postId);
     if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -1086,7 +1108,7 @@ app.post(
         .json({ error: 'Only the thread author or an admin can accept a solution' });
     }
 
-    const reply = db
+    const reply = await db
       .prepare(
         'SELECT id, author_id, post_id, is_accepted FROM replies WHERE id = ?',
       )
@@ -1096,34 +1118,34 @@ app.post(
     }
 
     const nextAccepted = Number(reply.is_accepted || 0) === 1 ? 0 : 1;
-    db.transaction(() => {
-      db.prepare(`UPDATE replies SET is_accepted = ? WHERE id = ?`).run(
+    await db.transaction(async () => {
+      await db.prepare(`UPDATE replies SET is_accepted = ? WHERE id = ?`).run(
         nextAccepted,
         replyId,
       );
       // Keep legacy column pointing at latest accepted reply (nullable if none)
       if (nextAccepted === 1) {
-        db.prepare(
+        await db.prepare(
           `UPDATE posts SET accepted_reply_id = ?, updated_at = datetime('now') WHERE id = ?`,
         ).run(replyId, postId);
       } else if (Number(post.accepted_reply_id) === Number(replyId)) {
-        const other = db
+        const other = await db
           .prepare(
             `SELECT id FROM replies WHERE post_id = ? AND is_accepted = 1 ORDER BY id DESC LIMIT 1`,
           )
           .get(postId);
-        db.prepare(
+        await db.prepare(
           `UPDATE posts SET accepted_reply_id = ?, updated_at = datetime('now') WHERE id = ?`,
         ).run(other?.id ?? null, postId);
       } else {
-        db.prepare(
+        await db.prepare(
           `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
         ).run(postId);
       }
     })();
 
     if (nextAccepted === 1) {
-      createNotification({
+      await createNotification({
         userId: reply.author_id,
         type: 'accepted_solution',
         postId,
@@ -1162,21 +1184,21 @@ const avatarUpload = multer({
   },
 });
 
-app.get('/api/users/:id/profile', authRequired, (req, res) => {
+app.get('/api/users/:id/profile', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const row = db
+  const row = await db
     .prepare(
       `SELECT id, email, role, display_name, created_at, avatar_path
        FROM users WHERE id = ?`,
     )
     .get(id);
   if (!row) return res.status(404).json({ error: 'User not found' });
-  const startedCount = db
+  const startedCount = (await db
     .prepare(`SELECT COUNT(*) AS c FROM posts WHERE author_id = ?`)
-    .get(id).c;
-  const replyCount = db
+    .get(id)).c;
+  const replyCount = (await db
     .prepare(`SELECT COUNT(*) AS c FROM replies WHERE author_id = ?`)
-    .get(id).c;
+    .get(id)).c;
   res.json({
     user: publicUser(row),
     isSelf: Number(req.user.id) === Number(id),
@@ -1187,34 +1209,44 @@ app.get('/api/users/:id/profile', authRequired, (req, res) => {
   });
 });
 
-app.get('/api/users/:id/avatar', authRequired, (req, res) => {
+app.get('/api/users/:id/avatar', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const row = db.prepare(`SELECT avatar_path FROM users WHERE id = ?`).get(id);
-  if (!row?.avatar_path) return res.status(404).json({ error: 'No photo' });
-  const filePath = path.isAbsolute(row.avatar_path)
-    ? row.avatar_path
-    : path.join(AVATAR_DIR, path.basename(row.avatar_path));
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Photo missing' });
+  const row = await db
+    .prepare(`SELECT avatar_path, avatar_data FROM users WHERE id = ?`)
+    .get(id);
+  if (!row?.avatar_path && !row?.avatar_data) {
+    return res.status(404).json({ error: 'No photo' });
   }
-  res.sendFile(filePath);
+  const filePath = row?.avatar_path
+    ? path.isAbsolute(row.avatar_path)
+      ? row.avatar_path
+      : path.join(AVATAR_DIR, path.basename(row.avatar_path))
+    : null;
+  if (filePath && fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  if (row?.avatar_data) {
+    const ext = path.extname(row.avatar_path || '') || '.jpg';
+    res.type(ext);
+    return res.send(row.avatar_data);
+  }
+  return res.status(404).json({ error: 'Photo missing' });
 });
 
 app.post(
   '/api/account/avatar',
   authRequired,
   avatarUpload.single('avatar'),
-  (req, res) => {
+  async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'Photo required' });
     }
-    const prev = db
+    const prev = await db
       .prepare(`SELECT avatar_path FROM users WHERE id = ?`)
       .get(req.user.id);
-    db.prepare(`UPDATE users SET avatar_path = ? WHERE id = ?`).run(
-      req.file.filename,
-      req.user.id,
-    );
+    await db.prepare(
+      `UPDATE users SET avatar_path = ?, avatar_data = ? WHERE id = ?`,
+    ).run(req.file.filename, fs.readFileSync(req.file.path), req.user.id);
     if (prev?.avatar_path) {
       const oldPath = path.join(AVATAR_DIR, path.basename(prev.avatar_path));
       try {
@@ -1223,7 +1255,7 @@ app.post(
         // ignore
       }
     }
-    const user = db
+    const user = await db
       .prepare(
         `SELECT id, email, role, display_name, created_at, avatar_path
          FROM users WHERE id = ?`,
@@ -1233,13 +1265,22 @@ app.post(
   },
 );
 
-app.get('/api/attachments/:id', authRequired, (req, res) => {
+app.get('/api/attachments/:id', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const att = db.prepare('SELECT * FROM attachments WHERE id = ?').get(id);
+  const att = await db.prepare('SELECT * FROM attachments WHERE id = ?').get(id);
   if (!att) return res.status(404).json({ error: 'Attachment not found' });
   const filePath = path.join(UPLOAD_DIR, att.stored_name);
   if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File missing on disk' });
+    if (!att.content) {
+      return res.status(404).json({ error: 'File missing on disk' });
+    }
+    const inlineMissing = String(req.query?.inline || '') === '1';
+    if (att.mime_type) res.type(att.mime_type);
+    res.setHeader(
+      'Content-Disposition',
+      `${inlineMissing ? 'inline' : 'attachment'}; filename="${String(att.original_name).replace(/"/g, '')}"`,
+    );
+    return res.send(att.content);
   }
   const inline = String(req.query?.inline || '') === '1';
   if (inline) {
@@ -1253,9 +1294,9 @@ app.get('/api/attachments/:id', authRequired, (req, res) => {
   res.download(filePath, att.original_name);
 });
 
-app.get('/api/account', authRequired, (req, res) => {
+app.get('/api/account', authRequired, async (req, res) => {
   const uid = req.user.id;
-  const started = db
+  const started = await Promise.all((await db
     .prepare(
       `SELECT p.*,
               u.email AS author_email,
@@ -1268,27 +1309,27 @@ app.get('/api/account', authRequired, (req, res) => {
        WHERE p.author_id = ?
        ORDER BY p.updated_at DESC`,
     )
-    .all(uid)
-    .map((row) => mapPost(row, uid));
+    .all(uid))
+    .map(async (row) => await mapPost(row, uid)));
 
-  const repliedIds = db
+  const repliedIds = (await db
     .prepare(
       `SELECT DISTINCT post_id FROM replies WHERE author_id = ? ORDER BY post_id DESC`,
     )
-    .all(uid)
+    .all(uid))
     .map((r) => r.post_id);
 
   const participated = [];
   for (const postId of repliedIds) {
-    const row = loadPostRow(postId);
+    const row = await loadPostRow(postId);
     if (!row) continue;
     if (Number(row.author_id) === Number(uid)) continue;
-    participated.push(mapPost(row, uid));
+    participated.push(await mapPost(row, uid));
   }
 
   res.json({
     user: publicUser(
-      db
+      await db
         .prepare(
           'SELECT id, email, role, display_name, created_at FROM users WHERE id = ?',
         )
@@ -1304,7 +1345,7 @@ app.get('/api/account', authRequired, (req, res) => {
   });
 });
 
-app.post('/api/account/password', authRequired, (req, res) => {
+app.post('/api/account/password', authRequired, async (req, res) => {
   const currentPassword = String(req.body?.currentPassword || '');
   const newPassword = String(req.body?.newPassword || '');
   if (!currentPassword || !newPassword) {
@@ -1317,11 +1358,11 @@ app.post('/api/account/password', authRequired, (req, res) => {
       .status(400)
       .json({ error: 'Password must be at least 6 characters' });
   }
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user || !verifyPassword(currentPassword, user.password_hash)) {
     return res.status(401).json({ error: 'Current password is incorrect' });
   }
-  db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(
+  await db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(
     hashPassword(newPassword),
     req.user.id,
   );
@@ -1332,13 +1373,13 @@ app.patch(
   '/api/admin/employees/:id/role',
   authRequired,
   adminRequired,
-  (req, res) => {
+  async (req, res) => {
     const id = Number(req.params.id);
     const role = String(req.body?.role || '').trim().toLowerCase();
     if (!['admin', 'employee'].includes(role)) {
       return res.status(400).json({ error: 'Role must be admin or employee' });
     }
-    const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    const target = await db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     if (!target) return res.status(404).json({ error: 'Account not found' });
     if (Number(target.id) === Number(req.user.id) && role !== 'admin') {
       return res
@@ -1346,17 +1387,17 @@ app.patch(
         .json({ error: 'You cannot remove your own admin access' });
     }
     if (target.role === 'admin' && role === 'employee') {
-      const adminCount = db
+      const adminCount = (await db
         .prepare(`SELECT COUNT(*) AS c FROM users WHERE role = 'admin'`)
-        .get().c;
+        .get()).c;
       if (Number(adminCount) <= 1) {
         return res
           .status(400)
           .json({ error: 'At least one admin must remain' });
       }
     }
-    db.prepare(`UPDATE users SET role = ? WHERE id = ?`).run(role, id);
-    const user = db
+    await db.prepare(`UPDATE users SET role = ? WHERE id = ?`).run(role, id);
+    const user = await db
       .prepare(
         'SELECT id, email, role, display_name, created_at FROM users WHERE id = ?',
       )
@@ -1383,4 +1424,5 @@ if (fs.existsSync(CLIENT_DIST)) {
 
 app.listen(PORT, () => {
   console.log(`Discussions App API listening on http://localhost:${PORT}`);
+  console.log(`Database storage: ${db.driver}`);
 });

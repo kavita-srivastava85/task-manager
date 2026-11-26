@@ -5,10 +5,10 @@ const email = (process.env.ADMIN_EMAIL || 'admin@example.com').trim().toLowerCas
 const password = process.env.ADMIN_PASSWORD || 'admin123';
 
 if (email && password) {
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (!existing) {
     const displayName = email.split('@')[0] || 'admin';
-    db.prepare(
+    await db.prepare(
       `INSERT INTO users (email, password_hash, role, display_name)
        VALUES (?, ?, 'admin', ?)`,
     ).run(email, hashPassword(password), displayName);

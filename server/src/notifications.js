@@ -1,6 +1,6 @@
 import db from './db.js';
 
-export function createNotification({
+export async function createNotification({
   userId,
   type,
   postId,
@@ -9,7 +9,7 @@ export function createNotification({
   message,
 }) {
   if (!userId || userId === actorId) return null;
-  const result = db
+  const result = await db
     .prepare(
       `INSERT INTO notifications
         (user_id, type, post_id, reply_id, actor_id, message)
@@ -19,14 +19,14 @@ export function createNotification({
   return result.lastInsertRowid;
 }
 
-export function notifyMentions({
+export async function notifyMentions({
   mentionedUsers,
   postId,
   replyId = null,
   actorId,
 }) {
   for (const user of mentionedUsers) {
-    createNotification({
+    await createNotification({
       userId: user.userId ?? user.id,
       type: 'mention',
       postId,
@@ -39,9 +39,9 @@ export function notifyMentions({
 }
 
 /** @deprecated Prefer notifyMentions — kept for any legacy callers. */
-export function notifyEveryone({ postId, replyId = null, actorId }) {
-  notifyMentions({
-    mentionedUsers: db.prepare(`SELECT id FROM users`).all().map((u) => ({
+export async function notifyEveryone({ postId, replyId = null, actorId }) {
+  await notifyMentions({
+    mentionedUsers: (await db.prepare(`SELECT id FROM users`).all()).map((u) => ({
       userId: u.id,
     })),
     postId,
