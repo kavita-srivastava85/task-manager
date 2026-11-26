@@ -135,8 +135,25 @@ if (!replyCols.includes('parent_reply_id')) {
     `ALTER TABLE replies ADD COLUMN parent_reply_id INTEGER REFERENCES replies(id) ON DELETE CASCADE`,
   );
 }
+if (!replyCols.includes('is_accepted')) {
+  db.exec(`ALTER TABLE replies ADD COLUMN is_accepted INTEGER NOT NULL DEFAULT 0`);
+  // Migrate legacy single accepted_reply_id into multi-accept flags
+  try {
+    db.exec(
+      `UPDATE replies SET is_accepted = 1
+       WHERE id IN (SELECT accepted_reply_id FROM posts WHERE accepted_reply_id IS NOT NULL)`,
+    );
+  } catch {
+    // ignore
+  }
+}
 db.exec(
   `CREATE INDEX IF NOT EXISTS idx_replies_parent ON replies(parent_reply_id)`,
 );
+
+const userCols = db.prepare(`PRAGMA table_info(users)`).all().map((c) => c.name);
+if (!userCols.includes('avatar_path')) {
+  db.exec(`ALTER TABLE users ADD COLUMN avatar_path TEXT`);
+}
 
 export default db;

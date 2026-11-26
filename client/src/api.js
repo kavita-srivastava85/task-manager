@@ -80,6 +80,9 @@ export const api = {
       body: JSON.stringify({ role }),
     }),
   getAccount: () => request('/api/account'),
+  getProfile: (id) => request(`/api/users/${id}/profile`),
+  uploadAvatar: (formData) =>
+    request('/api/account/avatar', { method: 'POST', body: formData }),
   changePassword: (payload) =>
     request('/api/account/password', {
       method: 'POST',

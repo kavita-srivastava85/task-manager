@@ -18,6 +18,7 @@ import {
 } from '../icons';
 import MentionTextarea from '../MentionTextarea';
 import ReactionBar from '../ReactionBar';
+import UserChip from '../UserChip';
 
 function firstFiveWords(text) {
   const words = String(text || '')
@@ -178,39 +179,44 @@ function ReplyNode({
         className={`reply-card${expanded || editing ? ' is-open' : ' is-collapsed'}`}
         style={{ marginLeft: depth ? `${Math.min(depth, 5) * 1.15}rem` : 0 }}
       >
-        <button
-          type="button"
-          className="reply-collapse-toggle"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-        >
-          <span className="meta">
-            {reply.author.displayName} · {formatWhen(reply.createdAt)}
-            {reply.isAccepted && (
-              <span className="accepted-badge">
-                <IconCheck /> Accepted
-              </span>
-            )}
-          </span>
-          {!expanded && !editing && (
-            <span className="reply-preview">{previewText(reply.body)}</span>
+        <div className="reply-collapse-head">
+          <UserChip user={reply.author} />
+          <span className="muted meta-when">· {formatWhen(reply.createdAt)}</span>
+          {reply.isAccepted && (
+            <span className="accepted-badge">
+              <IconCheck /> Accepted
+            </span>
           )}
-          <span className="muted reply-expand-hint">
+          <button
+            type="button"
+            className="linkish reply-expand-hint"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+          >
             {expanded ? 'Show less' : 'Open reply'}
-          </span>
-        </button>
+          </button>
+        </div>
+        {!expanded && !editing && (
+          <button
+            type="button"
+            className="reply-collapse-toggle"
+            onClick={() => setExpanded(true)}
+          >
+            <span className="reply-preview">{previewText(reply.body)}</span>
+          </button>
+        )}
 
         {(expanded || editing) && (
           <>
             <div className="reply-top">
               <div className="reply-actions">
-                {canAccept && !reply.isAccepted && !isClosed && (
+                {canAccept && !isClosed && (
                   <button
                     type="button"
-                    className="accept-btn"
+                    className={`accept-btn${reply.isAccepted ? ' on' : ''}`}
                     onClick={() => onAccept(reply.id)}
                   >
-                    <IconCheck /> Accept
+                    <IconCheck /> {reply.isAccepted ? 'Accepted' : 'Accept'}
                   </button>
                 )}
               </div>
@@ -411,6 +417,7 @@ export default function Thread() {
   const [editPostBody, setEditPostBody] = useState('');
   const [removePostAttIds, setRemovePostAttIds] = useState([]);
   const [editPostFiles, setEditPostFiles] = useState(null);
+  const [showReplyBox, setShowReplyBox] = useState(false);
 
   async function load() {
     const [{ post: next, replies: replyRows }, { users: directory }] =
@@ -671,13 +678,17 @@ export default function Thread() {
             )}
           </div>
         )}
-        <p className="meta">
-          {post.author.displayName} · {formatWhen(post.createdAt)}
+        <p className="meta meta-with-chip">
+          <UserChip user={post.author} />
+          <span className="muted">· {formatWhen(post.createdAt)}</span>
         </p>
         {!editingPost && <AttachmentList attachments={post.attachments} />}
         <MentionChips mentions={post.mentions} />
         <div className="reply-message-actions post-message-actions">
           <ReactionBar postId={post.id} initial={post.reactions} />
+          <span className="reply-count-pill" title="Replies">
+            <IconReply size={14} /> {post.replyCount || replies.length} replies
+          </span>
           {canManagePost && !editingPost && (
             <>
               {!isClosed && (
@@ -745,38 +756,66 @@ export default function Thread() {
 
       {!isClosed && (
         <section className="composer reply-composer thread-reply-bottom" id="reply">
-          <h2 className="section-title">
-            <span className="title-icon reply">
-              <IconReply size={18} />
-            </span>
-            Reply
-          </h2>
-          <form onSubmit={onReply} className="stack">
-            <label>
-              Message
-              <MentionTextarea
-                value={body}
-                onChange={setBody}
-                users={users}
-                required
-                rows={4}
-              />
-            </label>
-            <label className="file-label">
-              <span className="file-label-text">
-                <IconPaperclip /> Attachments
-              </span>
-              <input
-                type="file"
-                multiple
-                onChange={(e) => setFiles(e.target.files)}
-              />
-            </label>
-            <button type="submit" className="btn-with-icon" disabled={busy}>
-              <IconSend size={16} />
-              {busy ? 'Sending…' : 'Send reply'}
+          {!showReplyBox ? (
+            <button
+              type="button"
+              className="reply-fab"
+              onClick={() => setShowReplyBox(true)}
+              aria-label="Write a reply"
+            >
+              <IconReply size={20} />
+              <span>Reply</span>
             </button>
-          </form>
+          ) : (
+            <>
+              <div className="reply-expand-head">
+                <h2 className="section-title">
+                  <span className="title-icon reply">
+                    <IconReply size={18} />
+                  </span>
+                  Reply
+                </h2>
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => {
+                    setShowReplyBox(false);
+                    setBody('');
+                    setFiles(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <form onSubmit={onReply} className="stack">
+                <label>
+                  Message
+                  <MentionTextarea
+                    value={body}
+                    onChange={setBody}
+                    users={users}
+                    required
+                    rows={4}
+                    autoFocus
+                  />
+                </label>
+                <label className="file-label">
+                  <span className="file-label-text">
+                    <IconPaperclip /> Attachments
+                  </span>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => setFiles(e.target.files)}
+                  />
+                </label>
+                <button type="submit" className="btn-with-icon" disabled={busy}>
+                  <IconSend size={16} />
+                  {busy ? 'Sending…' : 'Send reply'}
+                </button>
+              </form>
+            </>
+          )}
         </section>
       )}
       {isClosed && (

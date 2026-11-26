@@ -10,6 +10,8 @@ import ResetPassword from './pages/ResetPassword';
 import Feed from './pages/Feed';
 import Thread from './pages/Thread';
 import Employees from './pages/Employees';
+import Profile from './pages/Profile';
+
 function Protected({ children, adminOnly = false }) {
   const { user, loading, logout } = useAuth();
   if (loading) {
@@ -61,6 +63,14 @@ export default function App() {
             }
           />
           <Route path="/account" element={<Navigate to="/discussions" replace />} />
+          <Route
+            path="/profile/:id"
+            element={
+              <Protected>
+                <Profile />
+              </Protected>
+            }
+          />
           <Route
             path="/admin/employees"
             element={

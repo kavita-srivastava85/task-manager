@@ -82,21 +82,31 @@ function attachmentsFor(postId = null, replyId = null) {
 }
 
 function mentionsFor(postId = null, replyId = null) {
-  return postId != null
-    ? db
-        .prepare(
-          `SELECT m.id, u.id AS userId, u.email, u.display_name AS displayName
-           FROM mentions m JOIN users u ON u.id = m.mentioned_user_id
-           WHERE m.post_id = ?`,
-        )
-        .all(postId)
-    : db
-        .prepare(
-          `SELECT m.id, u.id AS userId, u.email, u.display_name AS displayName
-           FROM mentions m JOIN users u ON u.id = m.mentioned_user_id
-           WHERE m.reply_id = ?`,
-        )
-        .all(replyId);
+  const rows =
+    postId != null
+      ? db
+          .prepare(
+            `SELECT m.id, u.id AS userId, u.email, u.display_name AS displayName,
+                    u.avatar_path AS avatarPath
+             FROM mentions m JOIN users u ON u.id = m.mentioned_user_id
+             WHERE m.post_id = ?`,
+          )
+          .all(postId)
+      : db
+          .prepare(
+            `SELECT m.id, u.id AS userId, u.email, u.display_name AS displayName,
+                    u.avatar_path AS avatarPath
+             FROM mentions m JOIN users u ON u.id = m.mentioned_user_id
+             WHERE m.reply_id = ?`,
+          )
+          .all(replyId);
+  return rows.map((m) => ({
+    id: m.userId,
+    userId: m.userId,
+    email: m.email,
+    displayName: m.displayName,
+    avatarUrl: m.avatarPath ? `/api/users/${m.userId}/avatar` : null,
+  }));
 }
 
 function saveMentions({ postId = null, replyId = null, body }) {
@@ -176,19 +186,26 @@ function reactionsFor(postId = null, replyId = null, viewerId = null) {
   return base;
 }
 
-function mapReply(r, acceptedReplyId, viewerId) {
+function mapAuthor(row) {
+  const id = row.author_id ?? row.id;
+  const avatarPath = row.author_avatar_path ?? row.avatar_path;
+  return {
+    id,
+    email: row.author_email ?? row.email,
+    displayName: row.author_display_name ?? row.display_name,
+    role: row.author_role ?? row.role,
+    avatarUrl: avatarPath ? `/api/users/${id}/avatar` : null,
+  };
+}
+
+function mapReply(r, _acceptedReplyId, viewerId) {
   return {
     id: r.id,
     body: r.body,
     createdAt: r.created_at,
     parentReplyId: r.parent_reply_id ?? null,
-    isAccepted: acceptedReplyId === r.id,
-    author: {
-      id: r.author_id,
-      email: r.author_email,
-      displayName: r.author_display_name,
-      role: r.author_role,
-    },
+    isAccepted: Number(r.is_accepted || 0) === 1,
+    author: mapAuthor(r),
     attachments: attachmentsFor(null, r.id),
     mentions: mentionsFor(null, r.id),
     reactions: reactionsFor(null, r.id, viewerId),
@@ -204,12 +221,7 @@ function mapPost(row, viewerId = null) {
     updatedAt: row.updated_at,
     status: row.status || 'open',
     acceptedReplyId: row.accepted_reply_id ?? null,
-    author: {
-      id: row.author_id,
-      email: row.author_email,
-      displayName: row.author_display_name,
-      role: row.author_role,
-    },
+    author: mapAuthor(row),
     replyCount: row.reply_count ?? 0,
     attachments: attachmentsFor(row.id, null),
     mentions: mentionsFor(row.id, null),
@@ -457,7 +469,7 @@ app.post('/api/notifications/read-all', authRequired, (req, res) => {
 app.get('/api/admin/employees', authRequired, adminRequired, (_req, res) => {
   const rows = db
     .prepare(
-      `SELECT id, email, role, display_name, created_at
+      `SELECT id, email, role, display_name, created_at, avatar_path
        FROM users ORDER BY role DESC, email ASC`,
     )
     .all();
@@ -559,7 +571,7 @@ app.delete('/api/admin/employees', authRequired, adminRequired, (_req, res) => {
 app.get('/api/users', authRequired, (_req, res) => {
   const users = db
     .prepare(
-      `SELECT id, email, role, display_name, created_at FROM users ORDER BY email`,
+      `SELECT id, email, role, display_name, created_at, avatar_path FROM users ORDER BY email`,
     )
     .all();
   res.json({ users: users.map(publicUser) });
@@ -578,6 +590,7 @@ app.get('/api/posts', authRequired, (req, res) => {
               u.email AS author_email,
               u.display_name AS author_display_name,
               u.role AS author_role,
+              u.avatar_path AS author_avatar_path,
               (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
        FROM posts p
        JOIN users u ON u.id = p.author_id
@@ -650,6 +663,7 @@ app.post('/api/posts', authRequired, upload.array('files', 5), (req, res) => {
               u.email AS author_email,
               u.display_name AS author_display_name,
               u.role AS author_role,
+              u.avatar_path AS author_avatar_path,
               0 AS reply_count
        FROM posts p JOIN users u ON u.id = p.author_id
        WHERE p.id = ?`,
@@ -666,6 +680,7 @@ app.get('/api/posts/:id', authRequired, (req, res) => {
               u.email AS author_email,
               u.display_name AS author_display_name,
               u.role AS author_role,
+              u.avatar_path AS author_avatar_path,
               (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
        FROM posts p
        JOIN users u ON u.id = p.author_id
@@ -679,7 +694,8 @@ app.get('/api/posts/:id', authRequired, (req, res) => {
       `SELECT r.*,
               u.email AS author_email,
               u.display_name AS author_display_name,
-              u.role AS author_role
+              u.role AS author_role,
+              u.avatar_path AS author_avatar_path
        FROM replies r
        JOIN users u ON u.id = r.author_id
        WHERE r.post_id = ?
@@ -698,6 +714,7 @@ function loadPostRow(id) {
               u.email AS author_email,
               u.display_name AS author_display_name,
               u.role AS author_role,
+              u.avatar_path AS author_avatar_path,
               (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
        FROM posts p JOIN users u ON u.id = p.author_id
        WHERE p.id = ?`,
@@ -890,7 +907,8 @@ app.patch(
         `SELECT r.*,
                 u.email AS author_email,
                 u.display_name AS author_display_name,
-                u.role AS author_role
+                u.role AS author_role,
+                u.avatar_path AS author_avatar_path
          FROM replies r
          JOIN users u ON u.id = r.author_id
          WHERE r.id = ?`,
@@ -1035,7 +1053,8 @@ app.post(
         `SELECT r.*,
                 u.email AS author_email,
                 u.display_name AS author_display_name,
-                u.role AS author_role
+                u.role AS author_role,
+                u.avatar_path AS author_avatar_path
          FROM replies r
          JOIN users u ON u.id = r.author_id
          WHERE r.id = ?`,
@@ -1068,30 +1087,149 @@ app.post(
     }
 
     const reply = db
-      .prepare('SELECT id, author_id, post_id FROM replies WHERE id = ?')
+      .prepare(
+        'SELECT id, author_id, post_id, is_accepted FROM replies WHERE id = ?',
+      )
       .get(replyId);
     if (!reply || reply.post_id !== postId) {
       return res.status(404).json({ error: 'Reply not found' });
     }
 
-    db.prepare(
-      `UPDATE posts SET accepted_reply_id = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(replyId, postId);
+    const nextAccepted = Number(reply.is_accepted || 0) === 1 ? 0 : 1;
+    db.transaction(() => {
+      db.prepare(`UPDATE replies SET is_accepted = ? WHERE id = ?`).run(
+        nextAccepted,
+        replyId,
+      );
+      // Keep legacy column pointing at latest accepted reply (nullable if none)
+      if (nextAccepted === 1) {
+        db.prepare(
+          `UPDATE posts SET accepted_reply_id = ?, updated_at = datetime('now') WHERE id = ?`,
+        ).run(replyId, postId);
+      } else if (Number(post.accepted_reply_id) === Number(replyId)) {
+        const other = db
+          .prepare(
+            `SELECT id FROM replies WHERE post_id = ? AND is_accepted = 1 ORDER BY id DESC LIMIT 1`,
+          )
+          .get(postId);
+        db.prepare(
+          `UPDATE posts SET accepted_reply_id = ?, updated_at = datetime('now') WHERE id = ?`,
+        ).run(other?.id ?? null, postId);
+      } else {
+        db.prepare(
+          `UPDATE posts SET updated_at = datetime('now') WHERE id = ?`,
+        ).run(postId);
+      }
+    })();
 
-    createNotification({
-      userId: reply.author_id,
-      type: 'accepted_solution',
-      postId,
-      replyId,
-      actorId: req.user.id,
-      message: 'Accepted',
-    });
+    if (nextAccepted === 1) {
+      createNotification({
+        userId: reply.author_id,
+        type: 'accepted_solution',
+        postId,
+        replyId,
+        actorId: req.user.id,
+        message: 'Accepted',
+      });
+    }
 
     res.json({
       ok: true,
       postId,
-      acceptedReplyId: replyId,
+      replyId,
+      isAccepted: nextAccepted === 1,
     });
+  },
+);
+
+const AVATAR_DIR = path.join(UPLOAD_DIR, 'avatars');
+fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `user-${req.user.id}-${Date.now()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 3 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!String(file.mimetype || '').startsWith('image/')) {
+      return cb(new Error('Only image uploads are allowed'));
+    }
+    cb(null, true);
+  },
+});
+
+app.get('/api/users/:id/profile', authRequired, (req, res) => {
+  const id = Number(req.params.id);
+  const row = db
+    .prepare(
+      `SELECT id, email, role, display_name, created_at, avatar_path
+       FROM users WHERE id = ?`,
+    )
+    .get(id);
+  if (!row) return res.status(404).json({ error: 'User not found' });
+  const startedCount = db
+    .prepare(`SELECT COUNT(*) AS c FROM posts WHERE author_id = ?`)
+    .get(id).c;
+  const replyCount = db
+    .prepare(`SELECT COUNT(*) AS c FROM replies WHERE author_id = ?`)
+    .get(id).c;
+  res.json({
+    user: publicUser(row),
+    isSelf: Number(req.user.id) === Number(id),
+    stats: {
+      startedCount: Number(startedCount || 0),
+      replyCount: Number(replyCount || 0),
+    },
+  });
+});
+
+app.get('/api/users/:id/avatar', authRequired, (req, res) => {
+  const id = Number(req.params.id);
+  const row = db.prepare(`SELECT avatar_path FROM users WHERE id = ?`).get(id);
+  if (!row?.avatar_path) return res.status(404).json({ error: 'No photo' });
+  const filePath = path.isAbsolute(row.avatar_path)
+    ? row.avatar_path
+    : path.join(AVATAR_DIR, path.basename(row.avatar_path));
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Photo missing' });
+  }
+  res.sendFile(filePath);
+});
+
+app.post(
+  '/api/account/avatar',
+  authRequired,
+  avatarUpload.single('avatar'),
+  (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Photo required' });
+    }
+    const prev = db
+      .prepare(`SELECT avatar_path FROM users WHERE id = ?`)
+      .get(req.user.id);
+    db.prepare(`UPDATE users SET avatar_path = ? WHERE id = ?`).run(
+      req.file.filename,
+      req.user.id,
+    );
+    if (prev?.avatar_path) {
+      const oldPath = path.join(AVATAR_DIR, path.basename(prev.avatar_path));
+      try {
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      } catch {
+        // ignore
+      }
+    }
+    const user = db
+      .prepare(
+        `SELECT id, email, role, display_name, created_at, avatar_path
+         FROM users WHERE id = ?`,
+      )
+      .get(req.user.id);
+    res.json({ user: publicUser(user) });
   },
 );
 
@@ -1123,6 +1261,7 @@ app.get('/api/account', authRequired, (req, res) => {
               u.email AS author_email,
               u.display_name AS author_display_name,
               u.role AS author_role,
+              u.avatar_path AS author_avatar_path,
               (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id) AS reply_count
        FROM posts p
        JOIN users u ON u.id = p.author_id

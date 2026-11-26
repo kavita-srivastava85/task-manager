@@ -1,9 +1,8 @@
-import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { getToken, api } from './api';
 import { IconChat, IconLogout, IconPaperclip, IconShield, IconUsers } from './icons';
 import NotificationBell from './NotificationBell';
-import PasswordField from './PasswordField';
+import UserChip from './UserChip';
 
 export function formatWhen(iso) {
   if (!iso) return '';
@@ -112,88 +111,19 @@ export function AttachmentList({ attachments = [] }) {
 export function MentionChips({ mentions = [] }) {
   if (!mentions.length) return null;
   return (
-    <p className="mention-meta">
-      Mentioned: {mentions.map((m) => m.displayName || m.email).join(', ')}
-    </p>
-  );
-}
-
-function ChangePasswordMini() {
-  const [open, setOpen] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
-  const [ok, setOk] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  async function onSubmit(e) {
-    e.preventDefault();
-    setError('');
-    setOk('');
-    if (newPassword !== confirm) {
-      setError('Passwords do not match');
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.changePassword({ currentPassword, newPassword });
-      setOk('Updated');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirm('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="pwd-mini">
-      <button
-        type="button"
-        className="pwd-mini-toggle"
-        onClick={() => {
-          setOpen((v) => !v);
-          setError('');
-          setOk('');
-        }}
-      >
-        Change password
-      </button>
-      {open && (
-        <form className="pwd-mini-panel stack tight" onSubmit={onSubmit}>
-          <PasswordField
-            label="Current"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
-          <PasswordField
-            label="New"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete="new-password"
-          />
-          <PasswordField
-            label="Confirm"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            required
-            minLength={6}
-            autoComplete="new-password"
-          />
-          {error && <p className="error">{error}</p>}
-          {ok && <p className="ok">{ok}</p>}
-          <button type="submit" className="btn-compact" disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-        </form>
-      )}
+    <div className="mention-meta">
+      Mentioned:{' '}
+      {mentions.map((m) => (
+        <UserChip
+          key={m.id || m.email}
+          user={{
+            id: m.id || m.userId,
+            displayName: m.displayName || m.email,
+            avatarUrl: m.avatarUrl || (m.id || m.userId ? `/api/users/${m.id || m.userId}/avatar` : null),
+          }}
+          className="mention-chip"
+        />
+      ))}
     </div>
   );
 }
@@ -235,8 +165,7 @@ export function Shell({ user, onLogout, children }) {
         </nav>
         <div className="user-slot">
           <NotificationBell />
-          <span className="muted user-name">{user?.displayName}</span>
-          <ChangePasswordMini />
+          {user && <UserChip user={user} />}
           <button type="button" className="linkish logout-btn" onClick={onLogout}>
             <IconLogout />
             Log out

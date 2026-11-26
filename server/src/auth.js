@@ -31,7 +31,7 @@ export function authRequired(req, res, next) {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = db
       .prepare(
-        'SELECT id, email, role, display_name, created_at FROM users WHERE id = ?',
+        'SELECT id, email, role, display_name, created_at, avatar_path FROM users WHERE id = ?',
       )
       .get(payload.sub);
     if (!user) {
@@ -59,5 +59,6 @@ export function publicUser(row) {
     role: row.role,
     displayName: row.display_name,
     createdAt: row.created_at,
+    avatarUrl: row.avatar_path ? `/api/users/${row.id}/avatar` : null,
   };
 }

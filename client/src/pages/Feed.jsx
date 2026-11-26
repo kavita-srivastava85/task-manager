@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { formatWhen } from '../components';
-import { IconChat, IconPaperclip, IconPlus, IconSend, IconSpark } from '../icons';
+import { IconChat, IconPaperclip, IconPlus, IconSearch, IconSend } from '../icons';
 import MentionTextarea from '../MentionTextarea';
 
 const PREVIEW_COUNT = 3;
@@ -146,14 +146,17 @@ export default function Feed() {
   return (
     <div className="chat-layout three-col">
       <div className="feed-search-bar compact">
-        <input
-          type="search"
-          className="feed-search-input compact"
-          placeholder="Search…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search my discussions"
-        />
+        <label className="feed-search-wrap">
+          <IconSearch size={14} />
+          <input
+            type="search"
+            className="feed-search-input compact"
+            placeholder="Search discussions"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search discussions"
+          />
+        </label>
         {isSearching && (
           <button type="button" className="linkish" onClick={clearSearch}>
             Clear
@@ -244,10 +247,7 @@ export default function Feed() {
           onClick={() => setShowComposer((v) => !v)}
         >
           <span>Start a discussion</span>
-          <span className="start-discussion-icons" aria-hidden="true">
-            <IconSpark size={18} />
-            <IconPlus size={18} />
-          </span>
+          <IconPlus size={18} />
         </button>
 
         {showComposer && (
